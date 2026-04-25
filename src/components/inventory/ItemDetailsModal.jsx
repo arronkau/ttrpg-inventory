@@ -1,11 +1,9 @@
 import { useState, useEffect } from "react";
 
-import {
-  formatWeight,
-  parseWeightInput,
-} from "../../utils/utils";
+import { parseWeightInput } from "../../utils/utils";
 import { formatCoins, calculateCoinWeight } from "../../utils/coins";
 import { LinkifiedText } from "../../utils/linkify";
+import { useFormatWeight, usePartyConfig } from "../../contexts/PartyConfigContext";
 
 export const ItemDetailsModal = ({
   handleDelete,
@@ -22,6 +20,8 @@ export const ItemDetailsModal = ({
   onTransfer,
   onIdentify,
 }) => {
+  const formatWeight = useFormatWeight();
+  const { weightUnit, coinsPerWeightUnit } = usePartyConfig();
   const [isEditing, setIsEditing] = useState(false);
   const [editedDescription, setEditedDescription] = useState(
     item ? item.description || "" : "",
@@ -184,7 +184,7 @@ export const ItemDetailsModal = ({
           copper: parseInt(editedCopper, 10) || 0,
         };
         const totalCoins = coins.platinum + coins.gold + coins.silver + coins.copper;
-        const coinWeight = Math.floor(totalCoins / 50);
+        const coinWeight = Math.floor(totalCoins / coinsPerWeightUnit);
         const parts = [];
         if (coins.platinum > 0) parts.push(`${coins.platinum}p`);
         if (coins.gold > 0) parts.push(`${coins.gold}g`);
@@ -312,7 +312,7 @@ export const ItemDetailsModal = ({
         gold: parseInt(editedGold, 10) || 0,
         silver: parseInt(editedSilver, 10) || 0,
         copper: parseInt(editedCopper, 10) || 0,
-      })
+      }, coinsPerWeightUnit)
     : 0;
 
   return (
@@ -450,7 +450,7 @@ export const ItemDetailsModal = ({
               </div>
             </div>
             <p className="text-xs text-gray-500 mt-2">
-              Weight: {editedCoinWeight} lbs (50 coins = 1 lb)
+              Weight: {editedCoinWeight} {weightUnit.plural} ({coinsPerWeightUnit} coins = 1 {weightUnit.singular})
             </p>
           </div>
         )}
@@ -539,7 +539,7 @@ export const ItemDetailsModal = ({
                 type="text"
                 value={editedWeightString}
                 onChange={(e) => setEditedWeightString(e.target.value)}
-                placeholder="Weight in lbs"
+                placeholder={`Weight in ${weightUnit.plural}`}
                 className="w-full p-2 border border-gray-300 rounded-md text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             ) : (

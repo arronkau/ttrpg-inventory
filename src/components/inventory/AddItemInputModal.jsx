@@ -1,8 +1,10 @@
 import { useState, useEffect } from "react";
 import { parseWeightInput } from "../../utils/utils";
 import { calculateCoinWeight, formatCoins } from "../../utils/coins";
+import { usePartyConfig } from "../../contexts/PartyConfigContext";
 
 export const AddItemInputModal = ({ show, onClose, onSubmit }) => {
+  const { weightUnit, coinsPerWeightUnit } = usePartyConfig();
   const [itemName, setItemName] = useState("");
   const [itemWeightString, setItemWeightString] = useState("");
   const [itemDescription, setItemDescription] = useState("");
@@ -46,7 +48,7 @@ export const AddItemInputModal = ({ show, onClose, onSubmit }) => {
         silver: parseInt(silver, 10) || 0,
         copper: parseInt(copper, 10) || 0,
       };
-      const coinWeight = calculateCoinWeight(coins);
+      const coinWeight = calculateCoinWeight(coins, coinsPerWeightUnit);
       const coinName = `$ ${formatCoins(coins)}`;
       onSubmit(coinName, coinWeight, '', {
         itemType: 'coins',
@@ -222,7 +224,7 @@ export const AddItemInputModal = ({ show, onClose, onSubmit }) => {
               </div>
             </div>
             <p className="text-xs text-gray-500 mt-2">
-              Weight: {calculateCoinWeight({ platinum: parseInt(platinum) || 0, gold: parseInt(gold) || 0, silver: parseInt(silver) || 0, copper: parseInt(copper) || 0 })} lbs (50 coins = 1 lb)
+              Weight: {calculateCoinWeight({ platinum: parseInt(platinum) || 0, gold: parseInt(gold) || 0, silver: parseInt(silver) || 0, copper: parseInt(copper) || 0 }, coinsPerWeightUnit)} {weightUnit.plural} ({coinsPerWeightUnit} coins = 1 {weightUnit.singular})
             </p>
           </div>
         )}
@@ -306,7 +308,7 @@ export const AddItemInputModal = ({ show, onClose, onSubmit }) => {
               type="text"
               value={itemWeightString}
               onChange={(e) => setItemWeightString(e.target.value)}
-              placeholder="Weight in lbs (e.g., 5 or 0.5)"
+              placeholder={`Weight in ${weightUnit.plural} (e.g., 5 or 0.5)`}
               className="w-full p-2 border border-gray-300 rounded-md mb-3 text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
             {!isUnidentified && (

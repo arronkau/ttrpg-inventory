@@ -1,7 +1,9 @@
 import { useState, useEffect } from "react";
 import { parseWeightInput } from "../../utils/utils";
+import { usePartyConfig } from "../../contexts/PartyConfigContext";
 
 export const AddContainerModal = ({ show, onClose, onSubmit }) => {
+  const { weightUnit } = usePartyConfig();
   const [containerName, setContainerName] = useState("");
   const [containerWeight, setContainerWeight] = useState("");
   const [maxCapacityString, setMaxCapacityString] = useState("");
@@ -60,14 +62,14 @@ export const AddContainerModal = ({ show, onClose, onSubmit }) => {
           type="text"
           value={containerWeight}
           onChange={(e) => setContainerWeight(e.target.value)}
-          placeholder="Weight in lbs (e.g., '2')"
+          placeholder={`Weight in ${weightUnit.plural} (e.g., '2')`}
           className="w-full p-2 border border-gray-300 rounded-md mb-3 text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
         <input
           type="text"
           value={maxCapacityString}
           onChange={(e) => setMaxCapacityString(e.target.value)}
-          placeholder="Max Capacity in lbs"
+          placeholder={`Max Capacity in ${weightUnit.plural}`}
           className="w-full p-2 border border-gray-300 rounded-md mb-4 text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
         <div className="flex justify-end gap-3">

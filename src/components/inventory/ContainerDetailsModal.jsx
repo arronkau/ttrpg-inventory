@@ -1,8 +1,6 @@
 import { useState, useEffect } from "react";
-import {
-  formatWeight,
-  parseWeightInput,
-} from "../../utils/utils";
+import { parseWeightInput } from "../../utils/utils";
+import { useFormatWeight, usePartyConfig } from "../../contexts/PartyConfigContext";
 
 export const ContainerDetailsModal = ({
   show,
@@ -12,6 +10,8 @@ export const ContainerDetailsModal = ({
   onDeleteContainer,
   onTransferAll,
 }) => {
+  const formatWeight = useFormatWeight();
+  const { weightUnit } = usePartyConfig();
   const [isEditing, setIsEditing] = useState(false);
   const [editedName, setEditedName] = useState(
     container ? container.name || "" : "",
@@ -113,7 +113,7 @@ export const ContainerDetailsModal = ({
               type="text"
               value={editedWeightString}
               onChange={(e) => setEditedWeightString(e.target.value)}
-              placeholder="Weight in lbs (e.g., 2)"
+              placeholder={`Weight in ${weightUnit.plural} (e.g., 2)`}
               className="w-full p-2 border border-gray-300 rounded-md text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           ) : (
@@ -130,7 +130,7 @@ export const ContainerDetailsModal = ({
               type="text"
               value={editedMaxCapacityString}
               onChange={(e) => setEditedMaxCapacityString(e.target.value)}
-              placeholder="Max Capacity in lbs (e.g., 30)"
+              placeholder={`Max Capacity in ${weightUnit.plural} (e.g., 30)`}
               className="w-full p-2 border border-gray-300 rounded-md text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           ) : (

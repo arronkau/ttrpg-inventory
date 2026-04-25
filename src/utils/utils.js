@@ -1,36 +1,24 @@
 // Weight utility functions for OSRIC inventory system
 // Base unit: pounds (lbs)
 
+export const DEFAULT_WEIGHT_UNIT = { singular: 'lb', plural: 'lbs' };
+
 /**
  * Format weight for display
- * @param {number} totalPounds - Weight in pounds
- * @returns {string} - Formatted weight string with "lbs" suffix
+ * @param {number} totalPounds - Weight in pounds (or whatever the configured unit measures)
+ * @param {{singular: string, plural: string}} [unit=DEFAULT_WEIGHT_UNIT]
+ * @returns {string}
  */
-export const formatWeight = (totalPounds) => {
-  if (totalPounds === 0) {
-    return "0 lbs";
-  }
-
-  // Round to 2 decimal places for display
-  const rounded = Math.round(totalPounds * 100) / 100;
-
-  // Use singular "lb" for 1, plural "lbs" otherwise
-  const suffix = Math.abs(rounded) === 1 ? "lb" : "lbs";
-
-  // Format nicely - remove unnecessary decimals
-  const formatted = Number.isInteger(rounded) ? rounded : rounded.toFixed(2).replace(/\.?0+$/, '');
-
-  return `${formatted} ${suffix}`;
+export const formatWeightValue = (totalPounds) => {
+  const rounded = Math.round((totalPounds || 0) * 100) / 100;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2).replace(/\.?0+$/, '');
 };
 
-/**
- * Legacy function name - now just calls formatWeight
- * Kept for backwards compatibility with existing code
- * @param {number} totalPounds - Weight in pounds
- * @returns {string} - Formatted weight string
- */
-export const formatWeightInStones = (totalPounds) => {
-  return formatWeight(totalPounds);
+export const formatWeight = (totalPounds, unit = DEFAULT_WEIGHT_UNIT) => {
+  const rounded = Math.round((totalPounds || 0) * 100) / 100;
+  const value = formatWeightValue(totalPounds);
+  const suffix = Math.abs(rounded) === 1 ? unit.singular : unit.plural;
+  return `${value} ${suffix}`;
 };
 
 /**

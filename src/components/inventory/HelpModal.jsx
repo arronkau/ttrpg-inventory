@@ -1,6 +1,8 @@
 import { useEffect } from "react";
+import { usePartyConfig } from "../../contexts/PartyConfigContext";
 
 export const HelpModal = ({ show, onClose }) => {
+  const { weightUnit, coinsPerWeightUnit } = usePartyConfig();
   useEffect(() => {
     const handleEscape = (e) => {
       if (e.key === 'Escape' && show) onClose();
@@ -50,7 +52,7 @@ export const HelpModal = ({ show, onClose }) => {
               <li>
                 <span className="text-yellow-600 font-semibold">$ Coins</span> —
                 platinum / gold / silver / copper. Weight is automatic
-                (50 coins = 1 lb). Coins added to a container that already has
+                ({coinsPerWeightUnit} coins = 1 {weightUnit.singular}). Coins added to a container that already has
                 coins will merge.
               </li>
             </ul>

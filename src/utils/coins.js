@@ -2,8 +2,10 @@
  * Coin utilities for OSRIC inventory management
  *
  * Coin denominations: platinum (p), gold (g), silver (s), copper (c)
- * Weight: 50 coins = 1 lb (rounded down)
+ * Weight: configurable coins-per-weight-unit; default 50 (e.g. 50 coins = 1 lb).
  */
+
+export const DEFAULT_COINS_PER_WEIGHT_UNIT = 50;
 
 // Parse coin string like "123p 456g 789s 555c" into object
 export function parseCoins(coinString) {
@@ -45,10 +47,10 @@ export function getTotalCoinCount(coins) {
   return (coins.platinum || 0) + (coins.gold || 0) + (coins.silver || 0) + (coins.copper || 0);
 }
 
-// Calculate weight of coins (50 coins = 1 lb, rounded down)
-export function calculateCoinWeight(coins) {
+// Calculate weight of coins (rounded down). `ratio` is coins per weight unit.
+export function calculateCoinWeight(coins, ratio = DEFAULT_COINS_PER_WEIGHT_UNIT) {
   const totalCoins = getTotalCoinCount(coins);
-  return Math.floor(totalCoins / 50);
+  return Math.floor(totalCoins / ratio);
 }
 
 // Merge two coin objects

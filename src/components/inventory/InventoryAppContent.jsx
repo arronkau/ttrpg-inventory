@@ -13,6 +13,7 @@ import {
   query,
   orderBy,
   runTransaction,
+  setDoc,
 } from "firebase/firestore";
 import { useParams, useNavigate } from "react-router-dom";
 import { AddContainerModal } from "./AddContainerModal";
@@ -26,8 +27,13 @@ import { AuditLogModal } from "./AuditLogModal";
 import { TransferAllItemsModal } from "./TransferAllItemsModal";
 import { ImportItemsModal } from "./ImportItemsModal";
 import { HelpModal } from "./HelpModal";
-import { formatWeightInStones, calculateContainerWeight } from "../../utils/utils";
+import { PartyConfigModal } from "./PartyConfigModal";
+import { calculateContainerWeight, formatWeight, formatWeightValue } from "../../utils/utils";
 import { formatCoins } from "../../utils/coins";
+import {
+  PartyConfigContext,
+  DEFAULT_PARTY_CONFIG,
+} from "../../contexts/PartyConfigContext";
 
 const generateId = () => crypto.randomUUID();
 
@@ -120,6 +126,14 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
 
   const [showHelpModal, setShowHelpModal] = useState(false);
 
+  const [partyConfig, setPartyConfig] = useState(DEFAULT_PARTY_CONFIG);
+  const [showPartyConfigModal, setShowPartyConfigModal] = useState(false);
+
+  const formatPartyWeight = useCallback(
+    (val) => formatWeight(val, partyConfig.weightUnit || DEFAULT_PARTY_CONFIG.weightUnit),
+    [partyConfig.weightUnit],
+  );
+
   // Keyboard shortcut: 'e' to toggle expand/collapse all
   useEffect(() => {
     const handleKeyDown = (event) => {
@@ -134,7 +148,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
           showDeleteCharacterConfirmModal || showAddContainerModal ||
           showItemDetailsModal || showContainerDetailsModal ||
           showCharacterDetailsModal || showAuditLogModal || showTransferAllModal ||
-          showImportItemsModal || showHelpModal) {
+          showImportItemsModal || showHelpModal || showPartyConfigModal) {
         return;
       }
 
@@ -188,7 +202,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
       showGenericInputModal, showAddItemModal, showDeleteCharacterConfirmModal,
       showAddContainerModal, showItemDetailsModal, showContainerDetailsModal,
       showCharacterDetailsModal, showAuditLogModal, showTransferAllModal,
-      showImportItemsModal, showHelpModal]);
+      showImportItemsModal, showHelpModal, showPartyConfigModal]);
 
   useEffect(() => {
     // If db and auth are passed as props, use them directly
@@ -324,6 +338,34 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
     }
   }, [db, appId, partyId]);
 
+  // Subscribe to per-party config (weight unit + default containers) on
+  // metadata/party-data. Doc may not exist for new parties; defaults apply.
+  useEffect(() => {
+    if (db && partyId) {
+      const configRef = doc(
+        db,
+        `artifacts/${appId}/public/data/dnd_inventory/${partyId}/metadata`,
+        'party-data',
+      );
+      const unsubscribe = onSnapshot(
+        configRef,
+        (snap) => {
+          const data = snap.exists() ? snap.data() : {};
+          setPartyConfig({
+            weightUnit: data.weightUnit || DEFAULT_PARTY_CONFIG.weightUnit,
+            coinsPerWeightUnit: data.coinsPerWeightUnit || DEFAULT_PARTY_CONFIG.coinsPerWeightUnit,
+            defaultContainers: data.defaultContainers || DEFAULT_PARTY_CONFIG.defaultContainers,
+          });
+        },
+        (error) => {
+          console.error("Error fetching party config:", error);
+          setPartyConfig(DEFAULT_PARTY_CONFIG);
+        }
+      );
+      return () => unsubscribe();
+    }
+  }, [db, appId, partyId]);
+
   // Helper function to add audit log entry. Each entry is its own subcollection
   // doc so concurrent writers can't clobber each other.
   const addAuditLogEntry = useCallback(async (action, description) => {
@@ -343,6 +385,27 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
       console.error("Error adding audit log entry:", error);
     }
   }, [db, appId, partyId]);
+
+  const handleSavePartyConfig = useCallback(async (config) => {
+    if (!db || !partyId) return;
+    try {
+      const configRef = doc(
+        db,
+        `artifacts/${appId}/public/data/dnd_inventory/${partyId}/metadata`,
+        'party-data',
+      );
+      await setDoc(configRef, {
+        weightUnit: config.weightUnit,
+        coinsPerWeightUnit: config.coinsPerWeightUnit,
+        defaultContainers: config.defaultContainers,
+      }, { merge: true });
+      await addAuditLogEntry('edited', 'party settings');
+    } catch (error) {
+      console.error("Error saving party config:", error);
+      setModalContent(`Error saving settings: ${error.message}`);
+      setShowModal(true);
+    }
+  }, [db, appId, partyId, addAuditLogEntry]);
 
   // Handler to transfer all items from one container to another
   const handleTransferAllItems = async (targetCharId, targetContainerId) => {
@@ -478,24 +541,18 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
       onSubmit: async (characterName) => {
         if (characterName) {
           try {
+            const defaults = (partyConfig.defaultContainers && partyConfig.defaultContainers.length > 0)
+              ? partyConfig.defaultContainers
+              : DEFAULT_PARTY_CONFIG.defaultContainers;
             const newCharacter = {
               name: characterName,
-              containers: [
-                {
-                  id: generateId(),
-                  name: "Backpack",
-                  items: [],
-                  weight: 0,
-                  maxCapacity: 30,
-                },
-                {
-                  id: generateId(),
-                  name: "Worn",
-                  items: [],
-                  weight: 0,
-                  maxCapacity: 138,
-                },
-              ],
+              containers: defaults.map((c) => ({
+                id: generateId(),
+                name: c.name,
+                items: [],
+                weight: c.weight || 0,
+                maxCapacity: c.maxCapacity || 0,
+              })),
             };
             await addDoc(
               collection(
@@ -614,7 +671,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
                     copper: (existingCoins.coins?.copper || 0) + (extraData.coins?.copper || 0),
                   };
                   const totalCoins = mergedCoins.platinum + mergedCoins.gold + mergedCoins.silver + mergedCoins.copper;
-                  const coinWeight = Math.floor(totalCoins / 50);
+                  const coinWeight = Math.floor(totalCoins / partyConfig.coinsPerWeightUnit);
                   const parts = [];
                   if (mergedCoins.platinum > 0) parts.push(`${mergedCoins.platinum}p`);
                   if (mergedCoins.gold > 0) parts.push(`${mergedCoins.gold}g`);
@@ -672,7 +729,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
       }
     } else {
       setModalContent(
-        "Invalid item name or weight. Please enter a valid name and a non-negative number for weight in pounds (e.g., '5' or '0.5').",
+        `Invalid item name or weight. Please enter a valid name and a non-negative number for weight in ${partyConfig.weightUnit.plural} (e.g., '5' or '0.5').`,
       );
       setShowModal(true);
     }
@@ -790,7 +847,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
       }
     } else {
       setModalContent(
-        "Invalid container data. Please enter a valid name, weight (can be negative), and a non-negative capacity in pounds (e.g., '10' or '5.5').",
+        `Invalid container data. Please enter a valid name, weight (can be negative), and a non-negative capacity in ${partyConfig.weightUnit.plural} (e.g., '10' or '5.5').`,
       );
       setShowModal(true);
     }
@@ -895,7 +952,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
         setShowItemDetailsModal(false);
       }
     },
-    [db, userId, appId, partyId, selectedItemForDetails, addAuditLogEntry],
+    [db, userId, appId, partyId, selectedItemForDetails, addAuditLogEntry, partyConfig.coinsPerWeightUnit],
   );
 
   // Handler to save an item with full updates (including type changes)
@@ -937,7 +994,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
                 copper: (existingCoins.coins?.copper || 0) + (updatedFields.coins?.copper || 0),
               };
               const totalCoins = mergedCoins.platinum + mergedCoins.gold + mergedCoins.silver + mergedCoins.copper;
-              const coinWeight = Math.floor(totalCoins / 50);
+              const coinWeight = Math.floor(totalCoins / partyConfig.coinsPerWeightUnit);
               const parts = [];
               if (mergedCoins.platinum > 0) parts.push(`${mergedCoins.platinum}p`);
               if (mergedCoins.gold > 0) parts.push(`${mergedCoins.gold}g`);
@@ -1028,7 +1085,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
         setShowItemDetailsModal(false);
       }
     },
-    [db, userId, appId, partyId, selectedItemForDetails, addAuditLogEntry],
+    [db, userId, appId, partyId, selectedItemForDetails, addAuditLogEntry, partyConfig.coinsPerWeightUnit],
   );
 
   const handleSaveContainerDetails = useCallback(
@@ -1139,7 +1196,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
       });
       setShowModal(true);
     },
-    [db, userId, appId, partyId, addAuditLogEntry],
+    [db, userId, appId, partyId, addAuditLogEntry, partyConfig.coinsPerWeightUnit],
   );
 
   const handleDeleteItem = useCallback(
@@ -1201,7 +1258,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
       });
       setShowModal(true);
     },
-    [db, userId, appId, partyId, addAuditLogEntry],
+    [db, userId, appId, partyId, addAuditLogEntry, partyConfig.coinsPerWeightUnit],
   );
 
   // Handler to transfer a single item to a different character/container
@@ -1236,7 +1293,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
 
         const buildCoinItem = (coins, id) => {
           const total = (coins.platinum || 0) + (coins.gold || 0) + (coins.silver || 0) + (coins.copper || 0);
-          const weight = Math.floor(total / 50);
+          const weight = Math.floor(total / partyConfig.coinsPerWeightUnit);
           const parts = [];
           if (coins.platinum > 0) parts.push(`${coins.platinum}p`);
           if (coins.gold > 0) parts.push(`${coins.gold}g`);
@@ -1566,7 +1623,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
         setShowModal(true);
       }
     },
-    [db, userId, appId, partyId, addAuditLogEntry],
+    [db, userId, appId, partyId, addAuditLogEntry, partyConfig.coinsPerWeightUnit],
   );
 
   // Handler to move an item up or down within a container
@@ -1673,7 +1730,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
         setShowModal(true);
       }
     },
-    [db, userId, appId, partyId, addAuditLogEntry],
+    [db, userId, appId, partyId, addAuditLogEntry, partyConfig.coinsPerWeightUnit],
   );
 
   // Handler to save/update a coin item
@@ -1695,7 +1752,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
           const characterData = characterDoc.data();
 
           const totalCoins = (coins.platinum || 0) + (coins.gold || 0) + (coins.silver || 0) + (coins.copper || 0);
-          const coinWeight = Math.floor(totalCoins / 50);
+          const coinWeight = Math.floor(totalCoins / partyConfig.coinsPerWeightUnit);
           const parts = [];
           if (coins.platinum > 0) parts.push(`${coins.platinum}p`);
           if (coins.gold > 0) parts.push(`${coins.gold}g`);
@@ -1738,7 +1795,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
         setShowModal(true);
       }
     },
-    [db, userId, appId, partyId, addAuditLogEntry],
+    [db, userId, appId, partyId, addAuditLogEntry, partyConfig.coinsPerWeightUnit],
   );
 
   // Handler to liquidate treasure into gold coins
@@ -1807,7 +1864,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
                   copper: existingCoins.coins?.copper || 0,
                 };
                 const totalCoins = mergedCoins.platinum + mergedCoins.gold + mergedCoins.silver + mergedCoins.copper;
-                const coinWeight = Math.floor(totalCoins / 50);
+                const coinWeight = Math.floor(totalCoins / partyConfig.coinsPerWeightUnit);
                 const parts = [];
                 if (mergedCoins.platinum > 0) parts.push(`${mergedCoins.platinum}p`);
                 if (mergedCoins.gold > 0) parts.push(`${mergedCoins.gold}g`);
@@ -1834,7 +1891,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
               silver: 0,
               copper: 0,
             };
-            const coinWeight = Math.floor(goldValue / 50);
+            const coinWeight = Math.floor(goldValue / partyConfig.coinsPerWeightUnit);
             const coinName = `$ ${goldValue}g`;
 
             updatedContainers = characterData.containers.map((cont) => {
@@ -1876,7 +1933,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
         setShowModal(true);
       }
     },
-    [db, userId, appId, partyId, addAuditLogEntry],
+    [db, userId, appId, partyId, addAuditLogEntry, partyConfig.coinsPerWeightUnit],
   );
 
   // Handler to import multiple items from JSON
@@ -1930,7 +1987,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
                     copper: (existingCoins.coins?.copper || 0) + importedCoins.copper,
                   };
                   const totalCoins = mergedCoins.platinum + mergedCoins.gold + mergedCoins.silver + mergedCoins.copper;
-                  const coinWeight = Math.floor(totalCoins / 50);
+                  const coinWeight = Math.floor(totalCoins / partyConfig.coinsPerWeightUnit);
                   const parts = [];
                   if (mergedCoins.platinum > 0) parts.push(`${mergedCoins.platinum}p`);
                   if (mergedCoins.gold > 0) parts.push(`${mergedCoins.gold}g`);
@@ -1945,7 +2002,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
                   };
                 } else {
                   const totalCoins = importedCoins.platinum + importedCoins.gold + importedCoins.silver + importedCoins.copper;
-                  const coinWeight = Math.floor(totalCoins / 50);
+                  const coinWeight = Math.floor(totalCoins / partyConfig.coinsPerWeightUnit);
                   const parts = [];
                   if (importedCoins.platinum > 0) parts.push(`${importedCoins.platinum}p`);
                   if (importedCoins.gold > 0) parts.push(`${importedCoins.gold}g`);
@@ -1984,7 +2041,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
         setShowModal(true);
       }
     },
-    [db, userId, appId, partyId, importTarget, addAuditLogEntry],
+    [db, userId, appId, partyId, importTarget, addAuditLogEntry, partyConfig.coinsPerWeightUnit],
   );
 
   if (loading) {
@@ -2020,6 +2077,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
   }
 
   return (
+    <PartyConfigContext.Provider value={partyConfig}>
     <div className="min-h-screen bg-gray-900 text-white font-inter p-1 sm:p-8">
       <Modal
         show={showModal}
@@ -2219,6 +2277,12 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
         show={showHelpModal}
         onClose={() => setShowHelpModal(false)}
       />
+      <PartyConfigModal
+        show={showPartyConfigModal}
+        onClose={() => setShowPartyConfigModal(false)}
+        config={partyConfig}
+        onSave={handleSavePartyConfig}
+      />
 
       <div className="flex flex-col items-center mb-8">
         <div className="flex gap-4">
@@ -2233,6 +2297,12 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
             className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg transform transition duration-300 hover:scale-105 focus:outline-none focus:ring-4 focus:ring-blue-500 focus:ring-opacity-50"
           >
             📋 Audit Log
+          </button>
+          <button
+            onClick={() => setShowPartyConfigModal(true)}
+            className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg transform transition duration-300 hover:scale-105 focus:outline-none focus:ring-4 focus:ring-gray-500 focus:ring-opacity-50"
+          >
+            ⚙ Settings
           </button>
         </div>
       </div>
@@ -2284,7 +2354,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
                   {char.name}
                 </h2>
                 <span className="text-yellow-200 text-base float-right">
-                  {formatWeightInStones(calculateCharacterTotalWeight(char))}
+                  {formatPartyWeight(calculateCharacterTotalWeight(char))}
                 </span>
               </div>
 
@@ -2337,11 +2407,8 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
                             </button>
                           )}
                           <span className="flex-grow">{container.name}</span>
-                          {isOverCapacity && (
-                            <span className="text-red-400 ml-2">(OVER)</span>
-                          )}
                           <span className="text-yellow-200 ml-auto text-sm font-medium">
-                            {`${formatWeightInStones(currentContainerWeight)} / ${formatWeightInStones(container.maxCapacity)}`}
+                            {`${formatWeightValue(currentContainerWeight)} / ${formatPartyWeight(container.maxCapacity)}`}
                           </span>
                         </h3>
                         {!Object.prototype.hasOwnProperty.call(collapsedContainers, container.id) || collapsedContainers[container.id] ? (
@@ -2410,7 +2477,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
                                           : item.name}
                                       </span>
                                       <span className="text-yellow-200 text-sm font-medium">
-                                        {formatWeightInStones(item.weight)}
+                                        {formatPartyWeight(item.weight)}
                                       </span>
                                     </div>
                                   </div>
@@ -2485,5 +2552,6 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
         </a>
       </footer>
     </div>
+    </PartyConfigContext.Provider>
   );
 }

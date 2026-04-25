@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { usePartyConfig } from "../../contexts/PartyConfigContext";
 
 const EXAMPLE_JSON = `[
   { "name": "Longsword", "weight": 4, "description": "A fine steel blade" },
@@ -8,6 +9,7 @@ const EXAMPLE_JSON = `[
 ]`;
 
 export const ImportItemsModal = ({ show, onClose, onImport }) => {
+  const { coinsPerWeightUnit } = usePartyConfig();
   const [jsonText, setJsonText] = useState("");
   const [error, setError] = useState("");
   const [preview, setPreview] = useState(null);
@@ -56,7 +58,7 @@ export const ImportItemsModal = ({ show, onClose, onImport }) => {
           if (totalCoins <= 0) {
             throw new Error(`Item ${index + 1}: Coins must have at least one denomination`);
           }
-          const weight = Math.floor(totalCoins / 50);
+          const weight = Math.floor(totalCoins / coinsPerWeightUnit);
           const parts = [];
           if (coins.platinum > 0) parts.push(`${coins.platinum}p`);
           if (coins.gold > 0) parts.push(`${coins.gold}g`);
