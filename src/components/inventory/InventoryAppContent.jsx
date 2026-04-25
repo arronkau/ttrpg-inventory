@@ -10,8 +10,9 @@ import {
   deleteDoc,
   onSnapshot,
   collection,
-  writeBatch,
-  setDoc,
+  query,
+  orderBy,
+  runTransaction,
 } from "firebase/firestore";
 import { useParams, useNavigate } from "react-router-dom";
 import { AddContainerModal } from "./AddContainerModal";
@@ -40,8 +41,7 @@ const calculateCharacterTotalWeight = (char) => {
 export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp, auth: authProp }) {
   const { partyId } = useParams();
   const navigate = useNavigate();
-  
-  // Store the current party ID in localStorage whenever it changes
+
   useEffect(() => {
     if (partyId) {
       localStorage.setItem('lastVisitedParty', partyId);
@@ -258,7 +258,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
 
       if (navigate) {
         const newPartyId = generateId();
-        navigate(`/parties/${newPartyId}`, { replace: true });
+        navigate(`/${newPartyId}`, { replace: true });
       }
       return;
     }
@@ -297,20 +297,19 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
     }
   }, [db, userId, appId, partyId, navigate]);
 
-  // Load audit log from Firestore
+  // Load audit log from Firestore (subcollection of entries, newest first)
   useEffect(() => {
     if (db && partyId) {
-      const metadataDocRef = doc(db, `artifacts/${appId}/public/data/dnd_inventory/${partyId}/metadata`, 'party-data');
+      const entriesRef = collection(
+        db,
+        `artifacts/${appId}/public/data/dnd_inventory/${partyId}/metadata/party-data/entries`,
+      );
+      const entriesQuery = query(entriesRef, orderBy('timestamp', 'desc'));
 
       const unsubscribe = onSnapshot(
-        metadataDocRef,
-        (docSnapshot) => {
-          if (docSnapshot.exists()) {
-            const data = docSnapshot.data();
-            setAuditLog(data.auditLog || []);
-          } else {
-            setAuditLog([]);
-          }
+        entriesQuery,
+        (snapshot) => {
+          setAuditLog(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
         },
         (error) => {
           console.error("Error fetching audit log:", error);
@@ -322,24 +321,21 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
     }
   }, [db, appId, partyId]);
 
-  // Helper function to add audit log entry
+  // Helper function to add audit log entry. Each entry is its own subcollection
+  // doc so concurrent writers can't clobber each other.
   const addAuditLogEntry = useCallback(async (action, description) => {
     if (!db || !partyId) return;
 
     try {
-      const metadataDocRef = doc(db, `artifacts/${appId}/public/data/dnd_inventory/${partyId}/metadata`, 'party-data');
-      const metadataDoc = await getDoc(metadataDocRef);
-
-      const newEntry = {
+      const entriesRef = collection(
+        db,
+        `artifacts/${appId}/public/data/dnd_inventory/${partyId}/metadata/party-data/entries`,
+      );
+      await addDoc(entriesRef, {
         action,
         description,
         timestamp: new Date().toISOString(),
-      };
-
-      const currentAuditLog = metadataDoc.exists() ? (metadataDoc.data().auditLog || []) : [];
-      const updatedAuditLog = [newEntry, ...currentAuditLog]; // Add new entry at the beginning
-
-      await setDoc(metadataDocRef, { auditLog: updatedAuditLog }, { merge: true });
+      });
     } catch (error) {
       console.error("Error adding audit log entry:", error);
     }
@@ -352,16 +348,17 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
     const { charId: sourceCharId, containerId: sourceContainerId, containerName: sourceContainerName } = transferAllSource;
 
     try {
-      // If transferring within the same character
       if (sourceCharId === targetCharId) {
         const characterRef = doc(
           db,
           `artifacts/${appId}/public/data/dnd_inventory/${partyId}/characters`,
           sourceCharId
         );
-        const characterDoc = await getDoc(characterRef);
 
-        if (characterDoc.exists()) {
+        const result = await runTransaction(db, async (txn) => {
+          const characterDoc = await txn.get(characterRef);
+          if (!characterDoc.exists()) return null;
+
           const characterData = characterDoc.data();
           const sourceContainer = characterData.containers.find(c => c.id === sourceContainerId);
           const targetContainer = characterData.containers.find(c => c.id === targetContainerId);
@@ -369,25 +366,28 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
 
           const updatedContainers = characterData.containers.map(container => {
             if (container.id === sourceContainerId) {
-              // Clear source container
               return { ...container, items: [] };
             } else if (container.id === targetContainerId) {
-              // Add all items to target container
               return { ...container, items: [...(container.items || []), ...itemsToTransfer] };
             }
             return container;
           });
 
-          await updateDoc(characterRef, { containers: updatedContainers });
+          txn.update(characterRef, { containers: updatedContainers });
+          return {
+            count: itemsToTransfer.length,
+            characterName: characterData.name,
+            targetContainerName: targetContainer?.name,
+          };
+        });
 
-          // Log the transfer
+        if (result) {
           await addAuditLogEntry(
             'moved',
-            `transferred ${itemsToTransfer.length} item(s) from ${sourceContainerName} to ${targetContainer?.name} (${characterData.name})`
+            `transferred ${result.count} item(s) from ${sourceContainerName} to ${result.targetContainerName} (${result.characterName})`
           );
         }
       } else {
-        // Transferring between different characters
         const sourceCharRef = doc(
           db,
           `artifacts/${appId}/public/data/dnd_inventory/${partyId}/characters`,
@@ -399,12 +399,13 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
           targetCharId
         );
 
-        const [sourceCharDoc, targetCharDoc] = await Promise.all([
-          getDoc(sourceCharRef),
-          getDoc(targetCharRef)
-        ]);
+        const result = await runTransaction(db, async (txn) => {
+          const [sourceCharDoc, targetCharDoc] = await Promise.all([
+            txn.get(sourceCharRef),
+            txn.get(targetCharRef),
+          ]);
+          if (!sourceCharDoc.exists() || !targetCharDoc.exists()) return null;
 
-        if (sourceCharDoc.exists() && targetCharDoc.exists()) {
           const sourceCharData = sourceCharDoc.data();
           const targetCharData = targetCharDoc.data();
           const sourceContainer = sourceCharData.containers.find(c => c.id === sourceContainerId);
@@ -425,15 +426,21 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
             return container;
           });
 
-          const batch = writeBatch(db);
-          batch.update(sourceCharRef, { containers: updatedSourceContainers });
-          batch.update(targetCharRef, { containers: updatedTargetContainers });
-          await batch.commit();
+          txn.update(sourceCharRef, { containers: updatedSourceContainers });
+          txn.update(targetCharRef, { containers: updatedTargetContainers });
 
-          // Log the transfer
+          return {
+            count: itemsToTransfer.length,
+            sourceCharName: sourceCharData.name,
+            targetCharName: targetCharData.name,
+            targetContainerName: targetContainer?.name,
+          };
+        });
+
+        if (result) {
           await addAuditLogEntry(
             'moved',
-            `transferred ${itemsToTransfer.length} item(s) from ${sourceCharData.name}'s ${sourceContainerName} to ${targetCharData.name}'s ${targetContainer?.name}`
+            `transferred ${result.count} item(s) from ${result.sourceCharName}'s ${sourceContainerName} to ${result.targetCharName}'s ${result.targetContainerName}`
           );
         }
       }
@@ -552,8 +559,11 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
           `artifacts/${appId}/public/data/dnd_inventory/${partyId}/characters`,
           characterId,
         );
-        const characterDoc = await getDoc(characterRef);
-        if (characterDoc.exists()) {
+
+        const result = await runTransaction(db, async (txn) => {
+          const characterDoc = await txn.get(characterRef);
+          if (!characterDoc.exists()) return null;
+
           const characterData = characterDoc.data();
           const container = characterData.containers.find(c => c.id === containerId);
 
@@ -586,77 +596,70 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
             newItem.weightPerItem = extraData.weightPerItem;
           }
 
-          let updatedContainers;
-
           // If adding coins, check if there's already a coins item in the container and merge
           if (extraData?.itemType === 'coins' && container) {
             const existingCoinsIndex = (container.items || []).findIndex(item => item.itemType === 'coins');
             if (existingCoinsIndex !== -1) {
-              // Merge with existing coins
-              updatedContainers = characterData.containers.map(
-                (cont) => {
-                  if (cont.id === containerId) {
-                    const updatedItems = [...(cont.items || [])];
-                    const existingCoins = updatedItems[existingCoinsIndex];
-                    const mergedCoins = {
-                      platinum: (existingCoins.coins?.platinum || 0) + (extraData.coins?.platinum || 0),
-                      gold: (existingCoins.coins?.gold || 0) + (extraData.coins?.gold || 0),
-                      silver: (existingCoins.coins?.silver || 0) + (extraData.coins?.silver || 0),
-                      copper: (existingCoins.coins?.copper || 0) + (extraData.coins?.copper || 0),
-                    };
-                    const totalCoins = mergedCoins.platinum + mergedCoins.gold + mergedCoins.silver + mergedCoins.copper;
-                    const coinWeight = Math.floor(totalCoins / 50);
-                    const parts = [];
-                    if (mergedCoins.platinum > 0) parts.push(`${mergedCoins.platinum}p`);
-                    if (mergedCoins.gold > 0) parts.push(`${mergedCoins.gold}g`);
-                    if (mergedCoins.silver > 0) parts.push(`${mergedCoins.silver}s`);
-                    if (mergedCoins.copper > 0) parts.push(`${mergedCoins.copper}c`);
-                    const coinName = `$ ${parts.join(' ') || '0c'}`;
+              const updatedContainers = characterData.containers.map((cont) => {
+                if (cont.id === containerId) {
+                  const updatedItems = [...(cont.items || [])];
+                  const existingCoins = updatedItems[existingCoinsIndex];
+                  const mergedCoins = {
+                    platinum: (existingCoins.coins?.platinum || 0) + (extraData.coins?.platinum || 0),
+                    gold: (existingCoins.coins?.gold || 0) + (extraData.coins?.gold || 0),
+                    silver: (existingCoins.coins?.silver || 0) + (extraData.coins?.silver || 0),
+                    copper: (existingCoins.coins?.copper || 0) + (extraData.coins?.copper || 0),
+                  };
+                  const totalCoins = mergedCoins.platinum + mergedCoins.gold + mergedCoins.silver + mergedCoins.copper;
+                  const coinWeight = Math.floor(totalCoins / 50);
+                  const parts = [];
+                  if (mergedCoins.platinum > 0) parts.push(`${mergedCoins.platinum}p`);
+                  if (mergedCoins.gold > 0) parts.push(`${mergedCoins.gold}g`);
+                  if (mergedCoins.silver > 0) parts.push(`${mergedCoins.silver}s`);
+                  if (mergedCoins.copper > 0) parts.push(`${mergedCoins.copper}c`);
+                  const coinName = `$ ${parts.join(' ') || '0c'}`;
 
-                    updatedItems[existingCoinsIndex] = {
-                      ...existingCoins,
-                      name: coinName,
-                      weight: coinWeight,
-                      coins: mergedCoins,
-                    };
-                    return { ...cont, items: updatedItems };
-                  }
-                  return cont;
-                },
-              );
-              await updateDoc(characterRef, { containers: updatedContainers });
-              await addAuditLogEntry(
-                'edited',
-                `merged coins into ${characterData.name}'s ${container?.name || 'container'}`
-              );
-              return;
+                  updatedItems[existingCoinsIndex] = {
+                    ...existingCoins,
+                    name: coinName,
+                    weight: coinWeight,
+                    coins: mergedCoins,
+                  };
+                  return { ...cont, items: updatedItems };
+                }
+                return cont;
+              });
+              txn.update(characterRef, { containers: updatedContainers });
+              return { merged: true, characterName: characterData.name, containerName: container?.name };
             }
           }
 
           // Default: add as new item
-          updatedContainers = characterData.containers.map(
-            (cont) => {
-              if (cont.id === containerId) {
-                return {
-                  ...cont,
-                  items: [
-                    ...(cont.items || []),
-                    newItem,
-                  ],
-                };
-              }
-              return cont;
-            },
-          );
-          await updateDoc(characterRef, { containers: updatedContainers });
+          const updatedContainers = characterData.containers.map((cont) => {
+            if (cont.id === containerId) {
+              return {
+                ...cont,
+                items: [...(cont.items || []), newItem],
+              };
+            }
+            return cont;
+          });
+          txn.update(characterRef, { containers: updatedContainers });
+          return { merged: false, characterName: characterData.name, containerName: container?.name };
+        });
 
-          // Log the item creation
+        if (result?.merged) {
+          await addAuditLogEntry(
+            'edited',
+            `merged coins into ${result.characterName}'s ${result.containerName || 'container'}`
+          );
+        } else if (result) {
           const itemTypeLabel = extraData?.itemType === 'coins' ? ' (coins)' :
                                extraData?.itemType === 'treasure' ? ' (treasure)' :
                                extraData?.isUnidentified ? ' (unidentified)' : '';
           await addAuditLogEntry(
             'created',
-            `item "${itemName}"${itemTypeLabel} in ${characterData.name}'s ${container?.name || 'container'}`
+            `item "${itemName}"${itemTypeLabel} in ${result.characterName}'s ${result.containerName || 'container'}`
           );
         }
       } catch (error) {
@@ -751,8 +754,11 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
           `artifacts/${appId}/public/data/dnd_inventory/${partyId}/characters`,
           addContainerModalTargetCharId,
         );
-        const characterDoc = await getDoc(characterRef);
-        if (characterDoc.exists()) {
+
+        const characterName = await runTransaction(db, async (txn) => {
+          const characterDoc = await txn.get(characterRef);
+          if (!characterDoc.exists()) return null;
+
           const characterData = characterDoc.data();
           const newContainer = {
             id: generateId(),
@@ -764,11 +770,14 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
             description: "",
           };
           const updatedContainers = [...characterData.containers, newContainer];
-          await updateDoc(characterRef, { containers: updatedContainers });
-          // Log the container creation
+          txn.update(characterRef, { containers: updatedContainers });
+          return characterData.name;
+        });
+
+        if (characterName) {
           await addAuditLogEntry(
             'created',
-            `container "${containerName}" for ${characterData.name}`
+            `container "${containerName}" for ${characterName}`
           );
         }
       } catch (error) {
@@ -832,46 +841,46 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
           `artifacts/${appId}/public/data/dnd_inventory/${partyId}/characters`,
           charId,
         );
-        const characterDoc = await getDoc(characterRef);
 
-        if (characterDoc.exists()) {
+        const result = await runTransaction(db, async (txn) => {
+          const characterDoc = await txn.get(characterRef);
+          if (!characterDoc.exists()) return null;
+
           const characterData = characterDoc.data();
           const container = characterData.containers.find(c => c.id === containerId);
           const oldItem = container?.items?.find(i => i.id === itemId);
-          const updatedContainers = characterData.containers.map(
-            (container) => {
-              if (container.id === containerId) {
-                const updatedItems = (container.items || []).map((item) => {
-                  if (item.id === itemId) {
-                    return {
-                      ...item,
-                      name: newName,
-                      weight: newWeight,
-                      description: newDescription,
-                    };
-                  }
-                  return item;
-                });
-                return { ...container, items: updatedItems };
-              }
-              return container;
-            },
-          );
-          await updateDoc(characterRef, { containers: updatedContainers });
-
-          // Log the item edit
-          if (oldItem) {
-            const changes = [];
-            if (oldItem.name !== newName) changes.push('name');
-            if (oldItem.weight !== newWeight) changes.push('weight');
-            if (oldItem.description !== newDescription) changes.push('description');
-
-            if (changes.length > 0) {
-              await addAuditLogEntry(
-                'edited',
-                `item "${oldItem.name}"${oldItem.name !== newName ? ` (renamed to "${newName}")` : ''} in ${characterData.name}'s ${container?.name || 'container'}`
-              );
+          const updatedContainers = characterData.containers.map((cont) => {
+            if (cont.id === containerId) {
+              const updatedItems = (cont.items || []).map((item) => {
+                if (item.id === itemId) {
+                  return {
+                    ...item,
+                    name: newName,
+                    weight: newWeight,
+                    description: newDescription,
+                  };
+                }
+                return item;
+              });
+              return { ...cont, items: updatedItems };
             }
+            return cont;
+          });
+          txn.update(characterRef, { containers: updatedContainers });
+          return { oldItem, characterName: characterData.name, containerName: container?.name };
+        });
+
+        if (result?.oldItem) {
+          const { oldItem, characterName, containerName } = result;
+          const changed =
+            oldItem.name !== newName ||
+            oldItem.weight !== newWeight ||
+            oldItem.description !== newDescription;
+          if (changed) {
+            await addAuditLogEntry(
+              'edited',
+              `item "${oldItem.name}"${oldItem.name !== newName ? ` (renamed to "${newName}")` : ''} in ${characterName}'s ${containerName || 'container'}`
+            );
           }
         }
       } catch (error) {
@@ -902,9 +911,11 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
           `artifacts/${appId}/public/data/dnd_inventory/${partyId}/characters`,
           charId,
         );
-        const characterDoc = await getDoc(characterRef);
 
-        if (characterDoc.exists()) {
+        const result = await runTransaction(db, async (txn) => {
+          const characterDoc = await txn.get(characterRef);
+          if (!characterDoc.exists()) return null;
+
           const characterData = characterDoc.data();
           const container = characterData.containers.find(c => c.id === containerId);
           const oldItem = container?.items?.find(i => i.id === itemId);
@@ -916,7 +927,6 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
             );
 
             if (existingCoins) {
-              // Merge with existing coins and remove this item
               const mergedCoins = {
                 platinum: (existingCoins.coins?.platinum || 0) + (updatedFields.coins?.platinum || 0),
                 gold: (existingCoins.coins?.gold || 0) + (updatedFields.coins?.gold || 0),
@@ -934,7 +944,6 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
 
               const updatedContainers = characterData.containers.map((cont) => {
                 if (cont.id === containerId) {
-                  // Remove the item being converted, update the existing coins
                   const updatedItems = (cont.items || [])
                     .filter(item => item.id !== itemId)
                     .map(item => {
@@ -953,64 +962,59 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
                 return cont;
               });
 
-              await updateDoc(characterRef, { containers: updatedContainers });
-
-              if (oldItem) {
-                await addAuditLogEntry(
-                  'edited',
-                  `converted "${oldItem.name}" to coins and merged in ${characterData.name}'s ${container?.name || 'container'}`
-                );
-              }
-              return;
+              txn.update(characterRef, { containers: updatedContainers });
+              return { mergedToExisting: true, oldItem, characterName: characterData.name, containerName: container?.name };
             }
           }
 
-          const updatedContainers = characterData.containers.map(
-            (cont) => {
-              if (cont.id === containerId) {
-                const updatedItems = (cont.items || []).map((item) => {
-                  if (item.id === itemId) {
-                    // Build new item, removing old type-specific fields
-                    const newItem = {
-                      id: item.id,
-                      name: updatedFields.name,
-                      weight: updatedFields.weight,
-                      description: updatedFields.description || '',
-                    };
+          const updatedContainers = characterData.containers.map((cont) => {
+            if (cont.id === containerId) {
+              const updatedItems = (cont.items || []).map((item) => {
+                if (item.id === itemId) {
+                  // Build new item, removing old type-specific fields
+                  const newItem = {
+                    id: item.id,
+                    name: updatedFields.name,
+                    weight: updatedFields.weight,
+                    description: updatedFields.description || '',
+                  };
 
-                    // Add type-specific fields
-                    if (updatedFields.itemType === 'coins') {
-                      newItem.itemType = 'coins';
-                      newItem.coins = updatedFields.coins;
-                    } else if (updatedFields.itemType === 'treasure') {
-                      newItem.itemType = 'treasure';
-                      newItem.goldValue = updatedFields.goldValue;
-                      if (updatedFields.quantity) newItem.quantity = updatedFields.quantity;
-                      if (updatedFields.weightPerItem !== undefined) newItem.weightPerItem = updatedFields.weightPerItem;
-                    }
-                    // For normal items, don't add itemType
-
-                    return newItem;
+                  if (updatedFields.itemType === 'coins') {
+                    newItem.itemType = 'coins';
+                    newItem.coins = updatedFields.coins;
+                  } else if (updatedFields.itemType === 'treasure') {
+                    newItem.itemType = 'treasure';
+                    newItem.goldValue = updatedFields.goldValue;
+                    if (updatedFields.quantity) newItem.quantity = updatedFields.quantity;
+                    if (updatedFields.weightPerItem !== undefined) newItem.weightPerItem = updatedFields.weightPerItem;
                   }
-                  return item;
-                });
-                return { ...cont, items: updatedItems };
-              }
-              return cont;
-            },
+
+                  return newItem;
+                }
+                return item;
+              });
+              return { ...cont, items: updatedItems };
+            }
+            return cont;
+          });
+
+          txn.update(characterRef, { containers: updatedContainers });
+          return { mergedToExisting: false, oldItem, characterName: characterData.name, containerName: container?.name };
+        });
+
+        if (result?.mergedToExisting && result.oldItem) {
+          await addAuditLogEntry(
+            'edited',
+            `converted "${result.oldItem.name}" to coins and merged in ${result.characterName}'s ${result.containerName || 'container'}`
           );
-
-          await updateDoc(characterRef, { containers: updatedContainers });
-
-          // Log the item edit
-          if (oldItem) {
-            const typeChanged = (oldItem.itemType || 'normal') !== (updatedFields.itemType || 'normal');
-            const typeLabel = typeChanged ? ` (type changed to ${updatedFields.itemType || 'normal'})` : '';
-            await addAuditLogEntry(
-              'edited',
-              `item "${oldItem.name}"${oldItem.name !== updatedFields.name ? ` (renamed to "${updatedFields.name}")` : ''}${typeLabel} in ${characterData.name}'s ${container?.name || 'container'}`
-            );
-          }
+        } else if (result?.oldItem) {
+          const { oldItem, characterName, containerName } = result;
+          const typeChanged = (oldItem.itemType || 'normal') !== (updatedFields.itemType || 'normal');
+          const typeLabel = typeChanged ? ` (type changed to ${updatedFields.itemType || 'normal'})` : '';
+          await addAuditLogEntry(
+            'edited',
+            `item "${oldItem.name}"${oldItem.name !== updatedFields.name ? ` (renamed to "${updatedFields.name}")` : ''}${typeLabel} in ${characterName}'s ${containerName || 'container'}`
+          );
         }
       } catch (error) {
         console.error("Error updating item:", error);
@@ -1047,26 +1051,26 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
           `artifacts/${appId}/public/data/dnd_inventory/${partyId}/characters`,
           charId,
         );
-        const characterDoc = await getDoc(characterRef);
 
-        if (characterDoc.exists()) {
+        await runTransaction(db, async (txn) => {
+          const characterDoc = await txn.get(characterRef);
+          if (!characterDoc.exists()) return;
+
           const characterData = characterDoc.data();
-          const updatedContainers = characterData.containers.map(
-            (container) => {
-              if (container.id === containerId) {
-                return {
-                  ...container,
-                  name: newName,
-                  weight: newWeight,
-                  maxCapacity: newMaxCapacityPounds,
-                  description: newDescription,
-                };
-              }
-              return container;
-            },
-          );
-          await updateDoc(characterRef, { containers: updatedContainers });
-        }
+          const updatedContainers = characterData.containers.map((container) => {
+            if (container.id === containerId) {
+              return {
+                ...container,
+                name: newName,
+                weight: newWeight,
+                maxCapacity: newMaxCapacityPounds,
+                description: newDescription,
+              };
+            }
+            return container;
+          });
+          txn.update(characterRef, { containers: updatedContainers });
+        });
       } catch (error) {
         console.error("Error saving container details:", error);
         setModalContent(`Error saving container details: ${error.message}`);
@@ -1102,18 +1106,23 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
             `artifacts/${appId}/public/data/dnd_inventory/${partyId}/characters`,
             charId,
           );
-          const characterDoc = await getDoc(characterRef);
-          if (characterDoc.exists()) {
+
+          const characterName = await runTransaction(db, async (txn) => {
+            const characterDoc = await txn.get(characterRef);
+            if (!characterDoc.exists()) return null;
+
             const characterData = characterDoc.data();
             const updatedContainers = characterData.containers.filter(
               (container) => container.id !== containerId,
             );
-            await updateDoc(characterRef, { containers: updatedContainers });
+            txn.update(characterRef, { containers: updatedContainers });
+            return characterData.name;
+          });
 
-            // Log the container deletion
+          if (characterName) {
             await addAuditLogEntry(
               'deleted',
-              `container "${containerName}" from ${characterData.name}`
+              `container "${containerName}" from ${characterName}`
             );
           }
         } catch (error) {
@@ -1151,33 +1160,32 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
             `artifacts/${appId}/public/data/dnd_inventory/${partyId}/characters`,
             charId,
           );
-          const characterDoc = await getDoc(characterRef);
-          if (characterDoc.exists()) {
+
+          const result = await runTransaction(db, async (txn) => {
+            const characterDoc = await txn.get(characterRef);
+            if (!characterDoc.exists()) return null;
+
             const characterData = characterDoc.data();
             const container = characterData.containers.find(c => c.id === containerId);
             const item = container?.items?.find(i => i.id === itemId);
-            const updatedContainers = characterData.containers.map(
-              (container) => {
-                if (container.id === containerId) {
-                  return {
-                    ...container,
-                    items: (container.items || []).filter(
-                      (item) => item.id !== itemId,
-                    ),
-                  };
-                }
-                return container;
-              },
-            );
-            await updateDoc(characterRef, { containers: updatedContainers });
+            const updatedContainers = characterData.containers.map((cont) => {
+              if (cont.id === containerId) {
+                return {
+                  ...cont,
+                  items: (cont.items || []).filter((i) => i.id !== itemId),
+                };
+              }
+              return cont;
+            });
+            txn.update(characterRef, { containers: updatedContainers });
+            return { item, characterName: characterData.name, containerName: container?.name };
+          });
 
-            // Log the item deletion
-            if (item) {
-              await addAuditLogEntry(
-                'deleted',
-                `item "${item.name}" from ${characterData.name}'s ${container?.name || 'container'}`
-              );
-            }
+          if (result?.item) {
+            await addAuditLogEntry(
+              'deleted',
+              `item "${result.item.name}" from ${result.characterName}'s ${result.containerName || 'container'}`
+            );
           }
         } catch (error) {
           console.error("Error deleting item:", error);
@@ -1221,309 +1229,26 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
           `artifacts/${appId}/public/data/dnd_inventory/${partyId}/characters`,
           targetCharId,
         );
+        const sameChar = sourceCharId === targetCharId;
 
-        const [sourceCharDoc, targetCharDoc] = await Promise.all([
-          getDoc(sourceCharRef),
-          getDoc(targetCharRef),
-        ]);
-
-        if (!sourceCharDoc.exists() || !targetCharDoc.exists()) {
-          setModalContent("Error: Source or target character not found.");
-          setShowModal(true);
-          return;
-        }
-
-        let sourceCharData = sourceCharDoc.data();
-        let targetCharData = targetCharDoc.data();
-
-        const sourceContainer = sourceCharData.containers.find(
-          (cont) => cont.id === sourceContainerId,
-        );
-        const targetContainer = targetCharData.containers.find(
-          (cont) => cont.id === targetContainerId,
-        );
-
-        if (!sourceContainer || !targetContainer) {
-          setModalContent("Error: Source or target container not found.");
-          setShowModal(true);
-          return;
-        }
-
-        const itemToMove = (sourceContainer.items || []).find(
-          (item) => item.id === itemId,
-        );
-
-        if (!itemToMove) {
-          setModalContent("Error: Item not found.");
-          setShowModal(true);
-          return;
-        }
-
-        // Handle partial coin transfer
-        if (partialData?.type === 'coins' && itemToMove.itemType === 'coins') {
-          const coinsToTransfer = partialData.coins;
-          const totalToTransfer = (coinsToTransfer.platinum || 0) + (coinsToTransfer.gold || 0) +
-                                  (coinsToTransfer.silver || 0) + (coinsToTransfer.copper || 0);
-
-          if (totalToTransfer === 0) return;
-
-          // Calculate remaining coins at source
-          const remainingCoins = {
-            platinum: (itemToMove.coins?.platinum || 0) - (coinsToTransfer.platinum || 0),
-            gold: (itemToMove.coins?.gold || 0) - (coinsToTransfer.gold || 0),
-            silver: (itemToMove.coins?.silver || 0) - (coinsToTransfer.silver || 0),
-            copper: (itemToMove.coins?.copper || 0) - (coinsToTransfer.copper || 0),
+        const buildCoinItem = (coins, id) => {
+          const total = (coins.platinum || 0) + (coins.gold || 0) + (coins.silver || 0) + (coins.copper || 0);
+          const weight = Math.floor(total / 50);
+          const parts = [];
+          if (coins.platinum > 0) parts.push(`${coins.platinum}p`);
+          if (coins.gold > 0) parts.push(`${coins.gold}g`);
+          if (coins.silver > 0) parts.push(`${coins.silver}s`);
+          if (coins.copper > 0) parts.push(`${coins.copper}c`);
+          return {
+            id,
+            name: `$ ${parts.join(' ') || '0c'}`,
+            weight,
+            description: '',
+            itemType: 'coins',
+            coins: { ...coins },
           };
-          const totalRemaining = remainingCoins.platinum + remainingCoins.gold + remainingCoins.silver + remainingCoins.copper;
+        };
 
-          // Helper to build coin name and weight
-          const buildCoinItem = (coins, id) => {
-            const total = (coins.platinum || 0) + (coins.gold || 0) + (coins.silver || 0) + (coins.copper || 0);
-            const weight = Math.floor(total / 50);
-            const parts = [];
-            if (coins.platinum > 0) parts.push(`${coins.platinum}p`);
-            if (coins.gold > 0) parts.push(`${coins.gold}g`);
-            if (coins.silver > 0) parts.push(`${coins.silver}s`);
-            if (coins.copper > 0) parts.push(`${coins.copper}c`);
-            return {
-              id,
-              name: `$ ${parts.join(' ') || '0c'}`,
-              weight,
-              description: '',
-              itemType: 'coins',
-              coins: { ...coins },
-            };
-          };
-
-          if (sourceCharId === targetCharId) {
-            // Same character transfer
-            const updatedContainers = sourceCharData.containers.map((container) => {
-              let newItems = [...(container.items || [])];
-
-              if (container.id === sourceContainerId) {
-                // Update or remove source coins
-                if (totalRemaining <= 0) {
-                  newItems = newItems.filter((item) => item.id !== itemId);
-                } else {
-                  newItems = newItems.map((item) => {
-                    if (item.id === itemId) {
-                      return buildCoinItem(remainingCoins, item.id);
-                    }
-                    return item;
-                  });
-                }
-              }
-
-              if (container.id === targetContainerId) {
-                // Merge with existing coins or add new
-                const existingCoinsIndex = newItems.findIndex(item => item.itemType === 'coins');
-                if (existingCoinsIndex !== -1) {
-                  const existingCoins = newItems[existingCoinsIndex];
-                  const mergedCoins = {
-                    platinum: (existingCoins.coins?.platinum || 0) + (coinsToTransfer.platinum || 0),
-                    gold: (existingCoins.coins?.gold || 0) + (coinsToTransfer.gold || 0),
-                    silver: (existingCoins.coins?.silver || 0) + (coinsToTransfer.silver || 0),
-                    copper: (existingCoins.coins?.copper || 0) + (coinsToTransfer.copper || 0),
-                  };
-                  newItems[existingCoinsIndex] = buildCoinItem(mergedCoins, existingCoins.id);
-                } else {
-                  newItems.push(buildCoinItem(coinsToTransfer, generateId()));
-                }
-              }
-
-              return { ...container, items: newItems };
-            });
-
-            await updateDoc(sourceCharRef, { containers: updatedContainers });
-          } else {
-            // Different character transfer
-            const newSourceContainers = sourceCharData.containers.map((container) => {
-              if (container.id === sourceContainerId) {
-                let newItems = [...(container.items || [])];
-                if (totalRemaining <= 0) {
-                  newItems = newItems.filter((item) => item.id !== itemId);
-                } else {
-                  newItems = newItems.map((item) => {
-                    if (item.id === itemId) {
-                      return buildCoinItem(remainingCoins, item.id);
-                    }
-                    return item;
-                  });
-                }
-                return { ...container, items: newItems };
-              }
-              return container;
-            });
-
-            const newTargetContainers = targetCharData.containers.map((container) => {
-              if (container.id === targetContainerId) {
-                let newItems = [...(container.items || [])];
-                const existingCoinsIndex = newItems.findIndex(item => item.itemType === 'coins');
-                if (existingCoinsIndex !== -1) {
-                  const existingCoins = newItems[existingCoinsIndex];
-                  const mergedCoins = {
-                    platinum: (existingCoins.coins?.platinum || 0) + (coinsToTransfer.platinum || 0),
-                    gold: (existingCoins.coins?.gold || 0) + (coinsToTransfer.gold || 0),
-                    silver: (existingCoins.coins?.silver || 0) + (coinsToTransfer.silver || 0),
-                    copper: (existingCoins.coins?.copper || 0) + (coinsToTransfer.copper || 0),
-                  };
-                  newItems[existingCoinsIndex] = buildCoinItem(mergedCoins, existingCoins.id);
-                } else {
-                  newItems.push(buildCoinItem(coinsToTransfer, generateId()));
-                }
-                return { ...container, items: newItems };
-              }
-              return container;
-            });
-
-            const batch = writeBatch(db);
-            batch.update(sourceCharRef, { containers: newSourceContainers });
-            batch.update(targetCharRef, { containers: newTargetContainers });
-            await batch.commit();
-          }
-
-          const coinParts = [];
-          if (coinsToTransfer.platinum > 0) coinParts.push(`${coinsToTransfer.platinum}p`);
-          if (coinsToTransfer.gold > 0) coinParts.push(`${coinsToTransfer.gold}g`);
-          if (coinsToTransfer.silver > 0) coinParts.push(`${coinsToTransfer.silver}s`);
-          if (coinsToTransfer.copper > 0) coinParts.push(`${coinsToTransfer.copper}c`);
-
-          if (sourceCharId === targetCharId) {
-            await addAuditLogEntry(
-              'moved',
-              `${coinParts.join(' ')} from ${sourceContainer.name} to ${targetContainer.name} (${sourceCharData.name})`
-            );
-          } else {
-            await addAuditLogEntry(
-              'moved',
-              `${coinParts.join(' ')} from ${sourceCharData.name}'s ${sourceContainer.name} to ${targetCharData.name}'s ${targetContainer.name}`
-            );
-          }
-          return;
-        }
-
-        // Handle partial treasure transfer
-        if (partialData?.type === 'treasure' && itemToMove.itemType === 'treasure') {
-          const qtyToTransfer = Math.min(partialData.quantity, itemToMove.quantity || 1);
-          const remainingQty = (itemToMove.quantity || 1) - qtyToTransfer;
-
-          // Helper to build treasure name
-          const buildTreasureName = (baseName, qty, goldValue) => {
-            return qty > 1 ? `${qty}x ${baseName} (${goldValue}g)` : `${baseName} (${goldValue}g)`;
-          };
-
-          // Extract base name from current name
-          let baseName = itemToMove.name.replace(/^\d+x\s*/, '').replace(/\s*\(\d+g\)\s*$/, '').trim();
-
-          if (sourceCharId === targetCharId) {
-            // Same character transfer
-            const updatedContainers = sourceCharData.containers.map((container) => {
-              let newItems = [...(container.items || [])];
-
-              if (container.id === sourceContainerId) {
-                if (remainingQty <= 0) {
-                  newItems = newItems.filter((item) => item.id !== itemId);
-                } else {
-                  newItems = newItems.map((item) => {
-                    if (item.id === itemId) {
-                      return {
-                        ...item,
-                        name: buildTreasureName(baseName, remainingQty, itemToMove.goldValue),
-                        quantity: remainingQty,
-                        weight: (itemToMove.weightPerItem || 0) * remainingQty,
-                      };
-                    }
-                    return item;
-                  });
-                }
-              }
-
-              if (container.id === targetContainerId) {
-                // Add treasure to target (always as new item for simplicity)
-                newItems.push({
-                  id: generateId(),
-                  name: buildTreasureName(baseName, qtyToTransfer, itemToMove.goldValue),
-                  weight: (itemToMove.weightPerItem || 0) * qtyToTransfer,
-                  description: itemToMove.description || '',
-                  itemType: 'treasure',
-                  goldValue: itemToMove.goldValue,
-                  quantity: qtyToTransfer,
-                  weightPerItem: itemToMove.weightPerItem || 0,
-                });
-              }
-
-              return { ...container, items: newItems };
-            });
-
-            await updateDoc(sourceCharRef, { containers: updatedContainers });
-          } else {
-            // Different character transfer
-            const newSourceContainers = sourceCharData.containers.map((container) => {
-              if (container.id === sourceContainerId) {
-                let newItems = [...(container.items || [])];
-                if (remainingQty <= 0) {
-                  newItems = newItems.filter((item) => item.id !== itemId);
-                } else {
-                  newItems = newItems.map((item) => {
-                    if (item.id === itemId) {
-                      return {
-                        ...item,
-                        name: buildTreasureName(baseName, remainingQty, itemToMove.goldValue),
-                        quantity: remainingQty,
-                        weight: (itemToMove.weightPerItem || 0) * remainingQty,
-                      };
-                    }
-                    return item;
-                  });
-                }
-                return { ...container, items: newItems };
-              }
-              return container;
-            });
-
-            const newTargetContainers = targetCharData.containers.map((container) => {
-              if (container.id === targetContainerId) {
-                return {
-                  ...container,
-                  items: [
-                    ...(container.items || []),
-                    {
-                      id: generateId(),
-                      name: buildTreasureName(baseName, qtyToTransfer, itemToMove.goldValue),
-                      weight: (itemToMove.weightPerItem || 0) * qtyToTransfer,
-                      description: itemToMove.description || '',
-                      itemType: 'treasure',
-                      goldValue: itemToMove.goldValue,
-                      quantity: qtyToTransfer,
-                      weightPerItem: itemToMove.weightPerItem || 0,
-                    },
-                  ],
-                };
-              }
-              return container;
-            });
-
-            const batch = writeBatch(db);
-            batch.update(sourceCharRef, { containers: newSourceContainers });
-            batch.update(targetCharRef, { containers: newTargetContainers });
-            await batch.commit();
-          }
-
-          if (sourceCharId === targetCharId) {
-            await addAuditLogEntry(
-              'moved',
-              `${qtyToTransfer}x ${baseName} from ${sourceContainer.name} to ${targetContainer.name} (${sourceCharData.name})`
-            );
-          } else {
-            await addAuditLogEntry(
-              'moved',
-              `${qtyToTransfer}x ${baseName} from ${sourceCharData.name}'s ${sourceContainer.name} to ${targetCharData.name}'s ${targetContainer.name}`
-            );
-          }
-          return;
-        }
-
-        // Helper to merge coins
         const mergeCoinsIntoContainer = (containerItems, coinItem) => {
           const existingCoinsIndex = containerItems.findIndex(item => item.itemType === 'coins');
           if (existingCoinsIndex !== -1) {
@@ -1534,38 +1259,249 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
               silver: (existingCoins.coins?.silver || 0) + (coinItem.coins?.silver || 0),
               copper: (existingCoins.coins?.copper || 0) + (coinItem.coins?.copper || 0),
             };
-            const totalCoins = mergedCoins.platinum + mergedCoins.gold + mergedCoins.silver + mergedCoins.copper;
-            const coinWeight = Math.floor(totalCoins / 50);
-            const parts = [];
-            if (mergedCoins.platinum > 0) parts.push(`${mergedCoins.platinum}p`);
-            if (mergedCoins.gold > 0) parts.push(`${mergedCoins.gold}g`);
-            if (mergedCoins.silver > 0) parts.push(`${mergedCoins.silver}s`);
-            if (mergedCoins.copper > 0) parts.push(`${mergedCoins.copper}c`);
-            const coinName = `$ ${parts.join(' ') || '0c'}`;
-
             const updatedItems = [...containerItems];
-            updatedItems[existingCoinsIndex] = {
-              ...existingCoins,
-              name: coinName,
-              weight: coinWeight,
-              coins: mergedCoins,
-            };
+            updatedItems[existingCoinsIndex] = buildCoinItem(mergedCoins, existingCoins.id);
             return updatedItems;
-          } else {
-            return [...containerItems, coinItem];
           }
+          return [...containerItems, coinItem];
         };
 
-        if (sourceCharId === targetCharId) {
-          // Transfer within same character
-          const updatedContainers = sourceCharData.containers.map(
-            (container) => {
+        const buildTreasureName = (baseName, qty, goldValue) =>
+          qty > 1 ? `${qty}x ${baseName} (${goldValue}g)` : `${baseName} (${goldValue}g)`;
+
+        const result = await runTransaction(db, async (txn) => {
+          const sourceCharDoc = await txn.get(sourceCharRef);
+          const targetCharDoc = sameChar ? sourceCharDoc : await txn.get(targetCharRef);
+
+          if (!sourceCharDoc.exists() || !targetCharDoc.exists()) {
+            return { error: "Error: Source or target character not found." };
+          }
+
+          const sourceCharData = sourceCharDoc.data();
+          const targetCharData = sameChar ? sourceCharData : targetCharDoc.data();
+
+          const sourceContainer = sourceCharData.containers.find(c => c.id === sourceContainerId);
+          const targetContainer = targetCharData.containers.find(c => c.id === targetContainerId);
+          if (!sourceContainer || !targetContainer) {
+            return { error: "Error: Source or target container not found." };
+          }
+
+          const itemToMove = (sourceContainer.items || []).find(i => i.id === itemId);
+          if (!itemToMove) {
+            return { error: "Error: Item not found." };
+          }
+
+          // Partial coin transfer
+          if (partialData?.type === 'coins' && itemToMove.itemType === 'coins') {
+            const coinsToTransfer = partialData.coins;
+            const totalToTransfer = (coinsToTransfer.platinum || 0) + (coinsToTransfer.gold || 0) +
+                                    (coinsToTransfer.silver || 0) + (coinsToTransfer.copper || 0);
+            if (totalToTransfer === 0) return { skip: true };
+
+            const remainingCoins = {
+              platinum: (itemToMove.coins?.platinum || 0) - (coinsToTransfer.platinum || 0),
+              gold: (itemToMove.coins?.gold || 0) - (coinsToTransfer.gold || 0),
+              silver: (itemToMove.coins?.silver || 0) - (coinsToTransfer.silver || 0),
+              copper: (itemToMove.coins?.copper || 0) - (coinsToTransfer.copper || 0),
+            };
+            const totalRemaining = remainingCoins.platinum + remainingCoins.gold + remainingCoins.silver + remainingCoins.copper;
+
+            if (sameChar) {
+              const updatedContainers = sourceCharData.containers.map((container) => {
+                let newItems = [...(container.items || [])];
+
+                if (container.id === sourceContainerId) {
+                  if (totalRemaining <= 0) {
+                    newItems = newItems.filter((item) => item.id !== itemId);
+                  } else {
+                    newItems = newItems.map((item) =>
+                      item.id === itemId ? buildCoinItem(remainingCoins, item.id) : item
+                    );
+                  }
+                }
+
+                if (container.id === targetContainerId) {
+                  const existingCoinsIndex = newItems.findIndex(item => item.itemType === 'coins');
+                  if (existingCoinsIndex !== -1) {
+                    const existingCoins = newItems[existingCoinsIndex];
+                    const mergedCoins = {
+                      platinum: (existingCoins.coins?.platinum || 0) + (coinsToTransfer.platinum || 0),
+                      gold: (existingCoins.coins?.gold || 0) + (coinsToTransfer.gold || 0),
+                      silver: (existingCoins.coins?.silver || 0) + (coinsToTransfer.silver || 0),
+                      copper: (existingCoins.coins?.copper || 0) + (coinsToTransfer.copper || 0),
+                    };
+                    newItems[existingCoinsIndex] = buildCoinItem(mergedCoins, existingCoins.id);
+                  } else {
+                    newItems.push(buildCoinItem(coinsToTransfer, generateId()));
+                  }
+                }
+
+                return { ...container, items: newItems };
+              });
+              txn.update(sourceCharRef, { containers: updatedContainers });
+            } else {
+              const newSourceContainers = sourceCharData.containers.map((container) => {
+                if (container.id === sourceContainerId) {
+                  let newItems = [...(container.items || [])];
+                  if (totalRemaining <= 0) {
+                    newItems = newItems.filter((item) => item.id !== itemId);
+                  } else {
+                    newItems = newItems.map((item) =>
+                      item.id === itemId ? buildCoinItem(remainingCoins, item.id) : item
+                    );
+                  }
+                  return { ...container, items: newItems };
+                }
+                return container;
+              });
+
+              const newTargetContainers = targetCharData.containers.map((container) => {
+                if (container.id === targetContainerId) {
+                  let newItems = [...(container.items || [])];
+                  const existingCoinsIndex = newItems.findIndex(item => item.itemType === 'coins');
+                  if (existingCoinsIndex !== -1) {
+                    const existingCoins = newItems[existingCoinsIndex];
+                    const mergedCoins = {
+                      platinum: (existingCoins.coins?.platinum || 0) + (coinsToTransfer.platinum || 0),
+                      gold: (existingCoins.coins?.gold || 0) + (coinsToTransfer.gold || 0),
+                      silver: (existingCoins.coins?.silver || 0) + (coinsToTransfer.silver || 0),
+                      copper: (existingCoins.coins?.copper || 0) + (coinsToTransfer.copper || 0),
+                    };
+                    newItems[existingCoinsIndex] = buildCoinItem(mergedCoins, existingCoins.id);
+                  } else {
+                    newItems.push(buildCoinItem(coinsToTransfer, generateId()));
+                  }
+                  return { ...container, items: newItems };
+                }
+                return container;
+              });
+
+              txn.update(sourceCharRef, { containers: newSourceContainers });
+              txn.update(targetCharRef, { containers: newTargetContainers });
+            }
+
+            const coinParts = [];
+            if (coinsToTransfer.platinum > 0) coinParts.push(`${coinsToTransfer.platinum}p`);
+            if (coinsToTransfer.gold > 0) coinParts.push(`${coinsToTransfer.gold}g`);
+            if (coinsToTransfer.silver > 0) coinParts.push(`${coinsToTransfer.silver}s`);
+            if (coinsToTransfer.copper > 0) coinParts.push(`${coinsToTransfer.copper}c`);
+
+            return {
+              auditDescription: sameChar
+                ? `${coinParts.join(' ')} from ${sourceContainer.name} to ${targetContainer.name} (${sourceCharData.name})`
+                : `${coinParts.join(' ')} from ${sourceCharData.name}'s ${sourceContainer.name} to ${targetCharData.name}'s ${targetContainer.name}`,
+            };
+          }
+
+          // Partial treasure transfer
+          if (partialData?.type === 'treasure' && itemToMove.itemType === 'treasure') {
+            const qtyToTransfer = Math.min(partialData.quantity, itemToMove.quantity || 1);
+            const remainingQty = (itemToMove.quantity || 1) - qtyToTransfer;
+            const baseName = itemToMove.name.replace(/^\d+x\s*/, '').replace(/\s*\(\d+g\)\s*$/, '').trim();
+
+            if (sameChar) {
+              const updatedContainers = sourceCharData.containers.map((container) => {
+                let newItems = [...(container.items || [])];
+
+                if (container.id === sourceContainerId) {
+                  if (remainingQty <= 0) {
+                    newItems = newItems.filter((item) => item.id !== itemId);
+                  } else {
+                    newItems = newItems.map((item) => {
+                      if (item.id === itemId) {
+                        return {
+                          ...item,
+                          name: buildTreasureName(baseName, remainingQty, itemToMove.goldValue),
+                          quantity: remainingQty,
+                          weight: (itemToMove.weightPerItem || 0) * remainingQty,
+                        };
+                      }
+                      return item;
+                    });
+                  }
+                }
+
+                if (container.id === targetContainerId) {
+                  newItems.push({
+                    id: generateId(),
+                    name: buildTreasureName(baseName, qtyToTransfer, itemToMove.goldValue),
+                    weight: (itemToMove.weightPerItem || 0) * qtyToTransfer,
+                    description: itemToMove.description || '',
+                    itemType: 'treasure',
+                    goldValue: itemToMove.goldValue,
+                    quantity: qtyToTransfer,
+                    weightPerItem: itemToMove.weightPerItem || 0,
+                  });
+                }
+
+                return { ...container, items: newItems };
+              });
+              txn.update(sourceCharRef, { containers: updatedContainers });
+            } else {
+              const newSourceContainers = sourceCharData.containers.map((container) => {
+                if (container.id === sourceContainerId) {
+                  let newItems = [...(container.items || [])];
+                  if (remainingQty <= 0) {
+                    newItems = newItems.filter((item) => item.id !== itemId);
+                  } else {
+                    newItems = newItems.map((item) => {
+                      if (item.id === itemId) {
+                        return {
+                          ...item,
+                          name: buildTreasureName(baseName, remainingQty, itemToMove.goldValue),
+                          quantity: remainingQty,
+                          weight: (itemToMove.weightPerItem || 0) * remainingQty,
+                        };
+                      }
+                      return item;
+                    });
+                  }
+                  return { ...container, items: newItems };
+                }
+                return container;
+              });
+
+              const newTargetContainers = targetCharData.containers.map((container) => {
+                if (container.id === targetContainerId) {
+                  return {
+                    ...container,
+                    items: [
+                      ...(container.items || []),
+                      {
+                        id: generateId(),
+                        name: buildTreasureName(baseName, qtyToTransfer, itemToMove.goldValue),
+                        weight: (itemToMove.weightPerItem || 0) * qtyToTransfer,
+                        description: itemToMove.description || '',
+                        itemType: 'treasure',
+                        goldValue: itemToMove.goldValue,
+                        quantity: qtyToTransfer,
+                        weightPerItem: itemToMove.weightPerItem || 0,
+                      },
+                    ],
+                  };
+                }
+                return container;
+              });
+
+              txn.update(sourceCharRef, { containers: newSourceContainers });
+              txn.update(targetCharRef, { containers: newTargetContainers });
+            }
+
+            return {
+              auditDescription: sameChar
+                ? `${qtyToTransfer}x ${baseName} from ${sourceContainer.name} to ${targetContainer.name} (${sourceCharData.name})`
+                : `${qtyToTransfer}x ${baseName} from ${sourceCharData.name}'s ${sourceContainer.name} to ${targetCharData.name}'s ${targetContainer.name}`,
+            };
+          }
+
+          // Default: full-item move
+          if (sameChar) {
+            const updatedContainers = sourceCharData.containers.map((container) => {
               let newItems = [...(container.items || [])];
               if (container.id === sourceContainerId) {
                 newItems = newItems.filter((item) => item.id !== itemId);
               }
               if (container.id === targetContainerId) {
-                // If transferring coins, merge with existing coins
                 if (itemToMove.itemType === 'coins') {
                   newItems = mergeCoinsIntoContainer(newItems, itemToMove);
                 } else if (!newItems.some((item) => item.id === itemToMove.id)) {
@@ -1573,35 +1509,21 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
                 }
               }
               return { ...container, items: newItems };
-            },
-          );
-
-          await updateDoc(sourceCharRef, { containers: updatedContainers });
-
-          await addAuditLogEntry(
-            'moved',
-            `item "${itemToMove.name}" from ${sourceContainer.name} to ${targetContainer.name} (${sourceCharData.name})`
-          );
-        } else {
-          // Transfer between different characters
-          const newSourceContainers = sourceCharData.containers.map(
-            (container) => {
+            });
+            txn.update(sourceCharRef, { containers: updatedContainers });
+          } else {
+            const newSourceContainers = sourceCharData.containers.map((container) => {
               if (container.id === sourceContainerId) {
                 return {
                   ...container,
-                  items: (container.items || []).filter(
-                    (item) => item.id !== itemId,
-                  ),
+                  items: (container.items || []).filter((item) => item.id !== itemId),
                 };
               }
               return container;
-            },
-          );
+            });
 
-          const newTargetContainers = targetCharData.containers.map(
-            (container) => {
+            const newTargetContainers = targetCharData.containers.map((container) => {
               if (container.id === targetContainerId) {
-                // If transferring coins, merge with existing coins
                 if (itemToMove.itemType === 'coins') {
                   return {
                     ...container,
@@ -1614,18 +1536,26 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
                 };
               }
               return container;
-            },
-          );
+            });
 
-          const batch = writeBatch(db);
-          batch.update(sourceCharRef, { containers: newSourceContainers });
-          batch.update(targetCharRef, { containers: newTargetContainers });
-          await batch.commit();
+            txn.update(sourceCharRef, { containers: newSourceContainers });
+            txn.update(targetCharRef, { containers: newTargetContainers });
+          }
 
-          await addAuditLogEntry(
-            'moved',
-            `item "${itemToMove.name}" from ${sourceCharData.name}'s ${sourceContainer.name} to ${targetCharData.name}'s ${targetContainer.name}`
-          );
+          return {
+            auditDescription: sameChar
+              ? `item "${itemToMove.name}" from ${sourceContainer.name} to ${targetContainer.name} (${sourceCharData.name})`
+              : `item "${itemToMove.name}" from ${sourceCharData.name}'s ${sourceContainer.name} to ${targetCharData.name}'s ${targetContainer.name}`,
+          };
+        });
+
+        if (result?.error) {
+          setModalContent(result.error);
+          setShowModal(true);
+          return;
+        }
+        if (result?.auditDescription) {
+          await addAuditLogEntry('moved', result.auditDescription);
         }
       } catch (error) {
         console.error("Error transferring item:", error);
@@ -1647,26 +1577,23 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
           `artifacts/${appId}/public/data/dnd_inventory/${partyId}/characters`,
           charId,
         );
-        const characterDoc = await getDoc(characterRef);
 
-        if (characterDoc.exists()) {
+        await runTransaction(db, async (txn) => {
+          const characterDoc = await txn.get(characterRef);
+          if (!characterDoc.exists()) return;
+
           const characterData = characterDoc.data();
           const containerIndex = characterData.containers.findIndex(c => c.id === containerId);
-
           if (containerIndex === -1) return;
 
           const container = characterData.containers[containerIndex];
           const items = [...(container.items || [])];
           const itemIndex = items.findIndex(item => item.id === itemId);
-
           if (itemIndex === -1) return;
 
           const newIndex = direction === 'up' ? itemIndex - 1 : itemIndex + 1;
-
-          // Check bounds
           if (newIndex < 0 || newIndex >= items.length) return;
 
-          // Swap items
           [items[itemIndex], items[newIndex]] = [items[newIndex], items[itemIndex]];
 
           const updatedContainers = characterData.containers.map((cont, idx) => {
@@ -1676,8 +1603,8 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
             return cont;
           });
 
-          await updateDoc(characterRef, { containers: updatedContainers });
-        }
+          txn.update(characterRef, { containers: updatedContainers });
+        });
       } catch (error) {
         console.error("Error reordering item:", error);
         setModalContent(`Error reordering item: ${error.message}`);
@@ -1698,9 +1625,11 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
           `artifacts/${appId}/public/data/dnd_inventory/${partyId}/characters`,
           charId,
         );
-        const characterDoc = await getDoc(characterRef);
 
-        if (characterDoc.exists()) {
+        const result = await runTransaction(db, async (txn) => {
+          const characterDoc = await txn.get(characterRef);
+          if (!characterDoc.exists()) return null;
+
           const characterData = characterDoc.data();
           let identifiedItemName = '';
 
@@ -1723,16 +1652,17 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
             return container;
           });
 
-          await updateDoc(characterRef, { containers: updatedContainers });
+          if (!identifiedItemName) return null;
+          txn.update(characterRef, { containers: updatedContainers });
+          const container = characterData.containers.find(c => c.id === containerId);
+          return { identifiedItemName, characterName: characterData.name, containerName: container?.name };
+        });
 
-          // Log the identification
-          if (identifiedItemName) {
-            const container = characterData.containers.find(c => c.id === containerId);
-            await addAuditLogEntry(
-              'identified',
-              `item revealed as "${identifiedItemName}" in ${characterData.name}'s ${container?.name || 'container'}`
-            );
-          }
+        if (result) {
+          await addAuditLogEntry(
+            'identified',
+            `item revealed as "${result.identifiedItemName}" in ${result.characterName}'s ${result.containerName || 'container'}`
+          );
         }
       } catch (error) {
         console.error("Error identifying item:", error);
@@ -1754,12 +1684,13 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
           `artifacts/${appId}/public/data/dnd_inventory/${partyId}/characters`,
           charId,
         );
-        const characterDoc = await getDoc(characterRef);
 
-        if (characterDoc.exists()) {
+        const result = await runTransaction(db, async (txn) => {
+          const characterDoc = await txn.get(characterRef);
+          if (!characterDoc.exists()) return null;
+
           const characterData = characterDoc.data();
 
-          // Calculate new name and weight
           const totalCoins = (coins.platinum || 0) + (coins.gold || 0) + (coins.silver || 0) + (coins.copper || 0);
           const coinWeight = Math.floor(totalCoins / 50);
           const parts = [];
@@ -1787,12 +1718,15 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
             return container;
           });
 
-          await updateDoc(characterRef, { containers: updatedContainers });
-
+          txn.update(characterRef, { containers: updatedContainers });
           const container = characterData.containers.find(c => c.id === containerId);
+          return { characterName: characterData.name, containerName: container?.name };
+        });
+
+        if (result) {
           await addAuditLogEntry(
             'edited',
-            `coins in ${characterData.name}'s ${container?.name || 'container'}`
+            `coins in ${result.characterName}'s ${result.containerName || 'container'}`
           );
         }
       } catch (error) {
@@ -1815,61 +1749,54 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
           `artifacts/${appId}/public/data/dnd_inventory/${partyId}/characters`,
           charId,
         );
-        const characterDoc = await getDoc(characterRef);
 
-        if (characterDoc.exists()) {
+        const result = await runTransaction(db, async (txn) => {
+          const characterDoc = await txn.get(characterRef);
+          if (!characterDoc.exists()) return null;
+
           const characterData = characterDoc.data();
           const container = characterData.containers.find(c => c.id === containerId);
           const treasureItem = container?.items?.find(i => i.id === itemId);
-
-          if (!treasureItem) return;
+          if (!treasureItem) return null;
 
           const currentQty = treasureItem.quantity || 1;
           const qtyToLiquidate = Math.min(quantityToLiquidate, currentQty);
           const remainingQty = currentQty - qtyToLiquidate;
 
-          // Find existing coins in the container
           const existingCoinsIndex = (container.items || []).findIndex(item =>
             item.itemType === 'coins' && item.id !== itemId
           );
 
-          // Helper to update or remove treasure item
           const updateTreasureItem = (items) => {
             if (remainingQty <= 0) {
-              // Remove the treasure item entirely
               return items.filter(item => item.id !== itemId);
-            } else {
-              // Update the treasure item with reduced quantity
-              return items.map(item => {
-                if (item.id === itemId) {
-                  // Update name to reflect new quantity
-                  let baseName = item.name.replace(/^\d+x\s*/, '').replace(/\s*\(\d+g\)\s*$/, '').trim();
-                  const newName = remainingQty > 1
-                    ? `${remainingQty}x ${baseName} (${treasureItem.goldValue}g)`
-                    : `${baseName} (${treasureItem.goldValue}g)`;
-                  const newWeight = (treasureItem.weightPerItem || 0) * remainingQty;
-                  return {
-                    ...item,
-                    name: newName,
-                    quantity: remainingQty,
-                    weight: newWeight,
-                  };
-                }
-                return item;
-              });
             }
+            return items.map(item => {
+              if (item.id === itemId) {
+                let baseName = item.name.replace(/^\d+x\s*/, '').replace(/\s*\(\d+g\)\s*$/, '').trim();
+                const newName = remainingQty > 1
+                  ? `${remainingQty}x ${baseName} (${treasureItem.goldValue}g)`
+                  : `${baseName} (${treasureItem.goldValue}g)`;
+                const newWeight = (treasureItem.weightPerItem || 0) * remainingQty;
+                return {
+                  ...item,
+                  name: newName,
+                  quantity: remainingQty,
+                  weight: newWeight,
+                };
+              }
+              return item;
+            });
           };
 
           let updatedContainers;
 
           if (existingCoinsIndex !== -1) {
-            // Merge with existing coins
             updatedContainers = characterData.containers.map((cont) => {
               if (cont.id === containerId) {
                 let items = [...(cont.items || [])];
                 const existingCoins = items[existingCoinsIndex];
 
-                // Add gold value to existing coins
                 const mergedCoins = {
                   platinum: existingCoins.coins?.platinum || 0,
                   gold: (existingCoins.coins?.gold || 0) + goldValue,
@@ -1892,14 +1819,12 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
                   coins: mergedCoins,
                 };
 
-                // Update or remove the treasure item
                 items = updateTreasureItem(items);
                 return { ...cont, items };
               }
               return cont;
             });
           } else {
-            // Create new coins item
             const newCoins = {
               platinum: 0,
               gold: goldValue,
@@ -1926,12 +1851,20 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
             });
           }
 
-          await updateDoc(characterRef, { containers: updatedContainers });
+          txn.update(characterRef, { containers: updatedContainers });
+          return {
+            qtyToLiquidate,
+            treasureName: treasureItem.name,
+            characterName: characterData.name,
+            containerName: container?.name,
+          };
+        });
 
-          const qtyText = qtyToLiquidate > 1 ? `${qtyToLiquidate}x ` : '';
+        if (result) {
+          const qtyText = result.qtyToLiquidate > 1 ? `${result.qtyToLiquidate}x ` : '';
           await addAuditLogEntry(
             'edited',
-            `liquidated ${qtyText}"${treasureItem.name}" into ${goldValue} gold in ${characterData.name}'s ${container?.name || 'container'}`
+            `liquidated ${qtyText}"${result.treasureName}" into ${goldValue} gold in ${result.characterName}'s ${result.containerName || 'container'}`
           );
         }
       } catch (error) {
@@ -1956,31 +1889,26 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
           `artifacts/${appId}/public/data/dnd_inventory/${partyId}/characters`,
           charId,
         );
-        const characterDoc = await getDoc(characterRef);
 
-        if (characterDoc.exists()) {
+        const characterNameResult = await runTransaction(db, async (txn) => {
+          const characterDoc = await txn.get(characterRef);
+          if (!characterDoc.exists()) return null;
+
           const characterData = characterDoc.data();
 
-          // Generate IDs for all items
           const itemsWithIds = items.map(item => ({
             ...item,
             id: generateId(),
           }));
 
-          // Check for coins to merge
           const coinItems = itemsWithIds.filter(item => item.itemType === 'coins');
           const nonCoinItems = itemsWithIds.filter(item => item.itemType !== 'coins');
 
           const updatedContainers = characterData.containers.map((container) => {
             if (container.id === containerId) {
-              let newItems = [...(container.items || [])];
+              let newItems = [...(container.items || []), ...nonCoinItems];
 
-              // Add non-coin items
-              newItems = [...newItems, ...nonCoinItems];
-
-              // Merge coin items
               if (coinItems.length > 0) {
-                // Combine all imported coins
                 const importedCoins = coinItems.reduce((acc, item) => ({
                   platinum: acc.platinum + (item.coins?.platinum || 0),
                   gold: acc.gold + (item.coins?.gold || 0),
@@ -1988,11 +1916,9 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
                   copper: acc.copper + (item.coins?.copper || 0),
                 }), { platinum: 0, gold: 0, silver: 0, copper: 0 });
 
-                // Find existing coins in container
                 const existingCoinsIndex = newItems.findIndex(item => item.itemType === 'coins');
 
                 if (existingCoinsIndex !== -1) {
-                  // Merge with existing
                   const existingCoins = newItems[existingCoinsIndex];
                   const mergedCoins = {
                     platinum: (existingCoins.coins?.platinum || 0) + importedCoins.platinum,
@@ -2015,7 +1941,6 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
                     coins: mergedCoins,
                   };
                 } else {
-                  // Add as new coin item
                   const totalCoins = importedCoins.platinum + importedCoins.gold + importedCoins.silver + importedCoins.copper;
                   const coinWeight = Math.floor(totalCoins / 50);
                   const parts = [];
@@ -2040,11 +1965,14 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
             return container;
           });
 
-          await updateDoc(characterRef, { containers: updatedContainers });
+          txn.update(characterRef, { containers: updatedContainers });
+          return characterData.name;
+        });
 
+        if (characterNameResult) {
           await addAuditLogEntry(
             'created',
-            `imported ${items.length} item(s) into ${characterData.name}'s ${containerName}`
+            `imported ${items.length} item(s) into ${characterNameResult}'s ${containerName}`
           );
         }
       } catch (error) {

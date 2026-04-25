@@ -19,8 +19,7 @@ const db = getFirestore(app);
 
 function getDefaultPartyPath() {
   const lastVisited = localStorage.getItem('lastVisitedParty');
-  const partyId = lastVisited || crypto.randomUUID();
-  return `/parties/${partyId}`;
+  return `/${lastVisited || crypto.randomUUID()}`;
 }
 
 export default function App() {
@@ -29,7 +28,7 @@ export default function App() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Routes>
           <Route
-            path="/parties/:partyId"
+            path="/:partyId"
             element={
               <InventoryAppContent
                 firebaseConfig={null}

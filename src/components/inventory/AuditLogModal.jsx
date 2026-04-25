@@ -63,7 +63,7 @@ export const AuditLogModal = ({ show, onClose, auditLog }) => {
           ) : (
             <div className="space-y-3">
               {auditLog.map((entry, index) => (
-                <div key={index} className="border-l-4 border-gray-300 pl-4 py-2">
+                <div key={entry.id || index} className="border-l-4 border-gray-300 pl-4 py-2">
                   <div className="flex items-start gap-2">
                     <span className="text-lg">{getActionIcon(entry.action)}</span>
                     <div className="flex-1">

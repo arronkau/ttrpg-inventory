@@ -84,7 +84,7 @@ artifacts/{appId}/public/data/dnd_inventory/{partyId}/
 └── metadata/party-data         -- audit log + party-level state
 ```
 
-A "party" is just a UUID in the URL (`/parties/abcd-1234-...`). New visitors are redirected to either their last visited party (from `localStorage`) or a freshly generated UUID. Share a party URL to share its inventory.
+A "party" is just a UUID in the URL (`/abcd-1234-...`). New visitors are redirected to either their last visited party (from `localStorage`) or a freshly generated UUID. Share a party URL to share its inventory.
 
 ## Development
 
