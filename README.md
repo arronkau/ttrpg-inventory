@@ -78,13 +78,59 @@ The Firestore layout looks like:
 
 ```
 artifacts/{appId}/public/data/dnd_inventory/{partyId}/
-├── characters/{characterId}    -- one doc per character
+├── characters/{characterId}                          -- one doc per character
 │   ├── name, order
 │   └── containers: [{ id, name, weight, items: [...] }]
-└── metadata/party-data         -- audit log + party-level state
+└── metadata/party-data/entries/{entryId}             -- one doc per audit log entry
+    └── action, description, timestamp                -- ISO string, queried desc
 ```
 
 A "party" is just a UUID in the URL (`/abcd-1234-...`). New visitors are redirected to either their last visited party (from `localStorage`) or a freshly generated UUID. Share a party URL to share its inventory.
+
+## Bulk import format
+
+The `{ }` button next to "Add Item" accepts a JSON array — one object per item to add to that container. Three item types are supported.
+
+**Normal items**
+
+```json
+{ "name": "Longsword", "weight": 4, "description": "A fine steel blade" }
+```
+
+| Field | Required | Default |
+|---|---|---|
+| `name` | ✓ | — |
+| `weight` | | `0` (lbs) |
+| `description` | | `""` |
+| `isUnidentified` | | `false` |
+| `secretName` | when unidentified | `""` |
+| `secretDescription` | when unidentified | `""` |
+
+**Coins** (`itemType: "coins"`)
+
+```json
+{ "itemType": "coins", "coins": { "gold": 50, "silver": 20 } }
+```
+
+`coins` takes any of `platinum`, `gold`, `silver`, `copper` (at least one must be > 0). Weight is computed (50 coins = 1 lb, floored). Importing coins into a container that already has a coins item merges them.
+
+**Treasure** (`itemType: "treasure"`)
+
+```json
+{ "itemType": "treasure", "name": "Ruby", "goldValue": 100, "quantity": 2, "weightPerItem": 0.1 }
+```
+
+| Field | Required | Default |
+|---|---|---|
+| `name` | ✓ | — |
+| `goldValue` | | `0` |
+| `quantity` | | `1` |
+| `weightPerItem` | | `0` |
+| `description` | | `""` |
+
+Total weight is `weightPerItem × quantity`. Treasure can be liquidated into coins from the item details modal.
+
+You can paste a single object instead of an array if you're only adding one item.
 
 ## Development
 

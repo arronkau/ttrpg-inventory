@@ -25,6 +25,7 @@ import { ItemDetailsModal } from "./ItemDetailsModal";
 import { AuditLogModal } from "./AuditLogModal";
 import { TransferAllItemsModal } from "./TransferAllItemsModal";
 import { ImportItemsModal } from "./ImportItemsModal";
+import { HelpModal } from "./HelpModal";
 import { formatWeightInStones, calculateContainerWeight } from "../../utils/utils";
 import { formatCoins } from "../../utils/coins";
 
@@ -117,6 +118,8 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
   const [showImportItemsModal, setShowImportItemsModal] = useState(false);
   const [importTarget, setImportTarget] = useState(null); // { charId, containerId, containerName }
 
+  const [showHelpModal, setShowHelpModal] = useState(false);
+
   // Keyboard shortcut: 'e' to toggle expand/collapse all
   useEffect(() => {
     const handleKeyDown = (event) => {
@@ -131,7 +134,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
           showDeleteCharacterConfirmModal || showAddContainerModal ||
           showItemDetailsModal || showContainerDetailsModal ||
           showCharacterDetailsModal || showAuditLogModal || showTransferAllModal ||
-          showImportItemsModal) {
+          showImportItemsModal || showHelpModal) {
         return;
       }
 
@@ -185,7 +188,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
       showGenericInputModal, showAddItemModal, showDeleteCharacterConfirmModal,
       showAddContainerModal, showItemDetailsModal, showContainerDetailsModal,
       showCharacterDetailsModal, showAuditLogModal, showTransferAllModal,
-      showImportItemsModal]);
+      showImportItemsModal, showHelpModal]);
 
   useEffect(() => {
     // If db and auth are passed as props, use them directly
@@ -2212,6 +2215,10 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
         }}
         onImport={handleImportItems}
       />
+      <HelpModal
+        show={showHelpModal}
+        onClose={() => setShowHelpModal(false)}
+      />
 
       <div className="flex flex-col items-center mb-8">
         <div className="flex gap-4">
@@ -2460,6 +2467,23 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
           </div>
         )}
       </div>
+
+      <footer className="mt-12 pt-6 border-t border-gray-700 flex justify-center items-center gap-6 text-sm text-gray-400">
+        <button
+          onClick={() => setShowHelpModal(true)}
+          className="hover:text-gray-200 transition-colors"
+        >
+          ? Help
+        </button>
+        <a
+          href="https://github.com/beaurancourt/ttrpg-inventory"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="hover:text-gray-200 transition-colors"
+        >
+          GitHub
+        </a>
+      </footer>
     </div>
   );
 }
