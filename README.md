@@ -1,0 +1,103 @@
+# ttrpg-inventory
+
+A shared, real-time inventory manager for tabletop RPG parties. Track characters, containers, items, and coins across the whole party — everyone sees updates immediately.
+
+Built with React + Vite + Tailwind, with Firebase (Firestore + anonymous auth) for sync.
+
+## Features
+
+- **Per-party shared inventory** — every party has a unique URL; share it with the table
+- **Characters and containers** — each character holds containers (backpack, mule, chest, etc.); containers hold items
+- **Coins and treasure** — platinum / gold / silver / copper, with automatic weight calculation; named treasure items track gold value
+- **Weights and encumbrance** — formatted weight totals per container, character, and party
+- **Audit log** — see who changed what, when
+- **Bulk transfer** — move all of one character's items to another in one click
+- **Import items** — paste a list of items to add at once
+- **Real-time sync** — Firestore `onSnapshot` keeps every connected client in lockstep
+- **Anonymous auth** — no signup, just open the link
+
+## Self-hosting
+
+This repo is meant to be deployed to your own Firebase project. Hosting it costs nothing for small parties on Firebase's free tier.
+
+### 1. Create a Firebase project
+
+Go to [Firebase Console](https://console.firebase.google.com), create a new project, then:
+
+- **Authentication** — enable the *Anonymous* sign-in provider
+- **Firestore Database** — create a database in production mode
+- **Project Settings → Your apps** — register a new Web app and copy the config values
+
+### 2. Configure Firestore security rules
+
+Paste these rules into Firestore Rules:
+
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /artifacts/{appId}/public/data/dnd_inventory/{partyId}/{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
+```
+
+These restrict reads and writes to authenticated users (anonymous auth counts) and scope all data under `artifacts/{appId}/public/data/dnd_inventory/`. Anyone with a party URL who is signed in (i.e. has loaded the page) can read and write that party's data, which matches the "share the URL with your table" model.
+
+### 3. Configure the app
+
+```sh
+git clone <your-fork-url>
+cd ttrpg-inventory
+cp .env.example .env.local
+# Edit .env.local and fill in your Firebase config values
+npm install
+npm run dev
+```
+
+The values from `.env.example` are pulled from Firebase Console → Project Settings → Your apps → SDK setup and configuration. They're embedded in the client bundle at build time, so they aren't truly secret — your data is protected by the Firestore rules above, not by hiding the API key.
+
+### 4. Deploy
+
+Any static host works (Firebase Hosting, Vercel, Netlify, GitHub Pages, Cloudflare Pages). For Firebase Hosting:
+
+```sh
+npm install -g firebase-tools
+firebase login
+firebase init hosting   # point public dir to "dist", configure as SPA
+npm run build
+firebase deploy
+```
+
+Make sure to set the Vite env vars in your hosting provider's environment so the production build picks them up.
+
+## Data model
+
+The Firestore layout looks like:
+
+```
+artifacts/{appId}/public/data/dnd_inventory/{partyId}/
+├── characters/{characterId}    -- one doc per character
+│   ├── name, order
+│   └── containers: [{ id, name, weight, items: [...] }]
+└── metadata/party-data         -- audit log + party-level state
+```
+
+A "party" is just a UUID in the URL (`/parties/abcd-1234-...`). New visitors are redirected to either their last visited party (from `localStorage`) or a freshly generated UUID. Share a party URL to share its inventory.
+
+## Development
+
+```sh
+npm run dev      # start dev server
+npm run build    # production build to dist/
+npm run preview  # preview production build
+```
+
+## Origin
+
+Extracted from [osric-srd](https://osric-srd.web.app), a character manager for OSRIC / AD&D 1e. The inventory module worked well as a standalone tool, so it lives here on its own.
+
+## License
+
+MIT
