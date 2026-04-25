@@ -140,10 +140,6 @@ npm run build    # production build to dist/
 npm run preview  # preview production build
 ```
 
-## Origin
-
-Extracted from [osric-srd](https://osric-srd.web.app), a character manager for OSRIC / AD&D 1e. The inventory module worked well as a standalone tool, so it lives here on its own.
-
 ## License
 
 MIT
