@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "source": "OSE CC3 Expanded Equipment, Adventuring Gear only; OSE SRD Adventuring Gear",
+  "source": "OSE CC3 Expanded Equipment, Adventuring Gear only; OSE SRD Adventuring Gear; AV OSE Armor and Weapons List",
   "slot_rules": {
     "0": "Unencumbering: very small or very light objects.",
     "1": "Can generally be carried in one hand.",
@@ -441,6 +441,272 @@
       "slots": 1,
       "price_gp": 10,
       "description": "A flowering herb that can be used to repel lycanthropes. The creature must be hit with the herb in melee combat."
+    },
+    {
+      "name": "Padded",
+      "type": "armor",
+      "slots": 1,
+      "price_gp": 5,
+      "description": "AC 11."
+    },
+    {
+      "name": "Furs",
+      "type": "armor",
+      "slots": 1,
+      "price_gp": 10,
+      "description": "AC 12."
+    },
+    {
+      "name": "Leather",
+      "type": "armor",
+      "slots": 1,
+      "price_gp": 20,
+      "description": "AC 12."
+    },
+    {
+      "name": "Studded leather",
+      "type": "armor",
+      "slots": 1,
+      "price_gp": 25,
+      "description": "AC 13."
+    },
+    {
+      "name": "Lorica Hamata",
+      "type": "armor",
+      "slots": 1,
+      "price_gp": 100,
+      "description": "AC 14. This armor set is rarely sold. It marks the wearer as a soldier in the Archontean legions. Most citizens do not look kindly on those who falsely claim to be legionnaires."
+    },
+    {
+      "name": "Chainmail",
+      "type": "armor",
+      "slots": 2,
+      "price_gp": 40,
+      "description": "AC 14."
+    },
+    {
+      "name": "Lorica Segmentata",
+      "type": "armor",
+      "slots": 2,
+      "price_gp": 400,
+      "description": "AC 15. This armor set is rarely sold. It marks the wearer as a soldier in the Archontean legions. Most citizens do not look kindly on those who falsely claim to be legionnaires."
+    },
+    {
+      "name": "Archontean Lamellar",
+      "type": "armor",
+      "slots": 2,
+      "price_gp": 600,
+      "description": "AC 16."
+    },
+    {
+      "name": "Shield",
+      "type": "armor",
+      "slots": 1,
+      "price_gp": 10,
+      "description": "AC +1 bonus. A shield can absorb damage from a single successful attack, but then is rendered useless."
+    },
+    {
+      "name": "Helmet",
+      "type": "armor",
+      "slots": 0,
+      "price_gp": 5,
+      "description": "AC N/A. A helmet can absorb damage from a single successful critical hit, but then is rendered useless. It also imposes a -1 penalty to Surprise."
+    },
+    {
+      "name": "Battle axe",
+      "type": "weapon",
+      "slots": 2,
+      "price_gp": 7,
+      "description": "Traits: Deadly, Melee, Shield Grappler, Two-handed."
+    },
+    {
+      "name": "Blackjack",
+      "type": "weapon",
+      "slots": 1,
+      "price_gp": 1,
+      "description": "Traits: Blunt, Knock-out, Melee, Stealth."
+    },
+    {
+      "name": "Blowgun",
+      "type": "weapon",
+      "slots": 1,
+      "price_gp": 3,
+      "description": "Traits: Missile 10/20/30, Poison."
+    },
+    {
+      "name": "Bolas",
+      "type": "weapon",
+      "slots": 1,
+      "price_gp": 5,
+      "description": "Traits: Blunt, Entangle, Missile 20/40/60."
+    },
+    {
+      "name": "Club",
+      "type": "weapon",
+      "slots": 1,
+      "price_gp": 3,
+      "description": "Traits: Blunt, Knock-out, Melee."
+    },
+    {
+      "name": "Crossbow",
+      "type": "weapon",
+      "slots": 2,
+      "price_gp": 30,
+      "description": "Traits: Deadly, Missile 80/160/240, Slow, Two-handed."
+    },
+    {
+      "name": "Dagger",
+      "type": "weapon",
+      "slots": 1,
+      "price_gp": 3,
+      "description": "Traits: Light, Melee, Missile 10/20/30, Quick draw."
+    },
+    {
+      "name": "Flail",
+      "type": "weapon",
+      "slots": 2,
+      "price_gp": 10,
+      "description": "Traits: Blunt, Deadly, Melee, Shield Grappler, Two-handed."
+    },
+    {
+      "name": "Garotte",
+      "type": "weapon",
+      "slots": 1,
+      "price_gp": 1,
+      "description": "Traits: Melee, Stealth, Strangle, Two-handed."
+    },
+    {
+      "name": "Hand axe",
+      "type": "weapon",
+      "slots": 1,
+      "price_gp": 4,
+      "description": "Traits: Light, Melee, Missile 10/20/30, Shield Grappler."
+    },
+    {
+      "name": "Holy water vial",
+      "type": "weapon",
+      "slots": 1,
+      "price_gp": 25,
+      "description": "Traits: Missile 10/30/50, Splash."
+    },
+    {
+      "name": "Javelin",
+      "type": "weapon",
+      "slots": 1,
+      "price_gp": 1,
+      "description": "Traits: Missile 30/60/90."
+    },
+    {
+      "name": "Lance",
+      "type": "weapon",
+      "slots": 2,
+      "price_gp": 5,
+      "description": "Traits: Charge, Melee, Specialized."
+    },
+    {
+      "name": "Long bow",
+      "type": "weapon",
+      "slots": 2,
+      "price_gp": 40,
+      "description": "Traits: Deadly, Missile 70/140/210, Specialized, Two-handed."
+    },
+    {
+      "name": "Mace",
+      "type": "weapon",
+      "slots": 1,
+      "price_gp": 5,
+      "description": "Traits: Blunt, Knock-out, Melee."
+    },
+    {
+      "name": "Net",
+      "type": "weapon",
+      "slots": 1,
+      "price_gp": 5,
+      "description": "Traits: Blunt, Entangle, Missile 10/20/30."
+    },
+    {
+      "name": "Oil flask, burning",
+      "type": "weapon",
+      "slots": 1,
+      "price_gp": 2,
+      "description": "Traits: Missile 10/30/50, Splash."
+    },
+    {
+      "name": "Polearm",
+      "type": "weapon",
+      "slots": 2,
+      "price_gp": 7,
+      "description": "Traits: Brace, Deadly, Melee, Specialized, Two-handed."
+    },
+    {
+      "name": "Short bow",
+      "type": "weapon",
+      "slots": 2,
+      "price_gp": 25,
+      "description": "Traits: Missile 50/100/150, Two-handed."
+    },
+    {
+      "name": "Short sword",
+      "type": "weapon",
+      "slots": 1,
+      "price_gp": 7,
+      "description": "Traits: Light, Melee, Quick draw."
+    },
+    {
+      "name": "Sling",
+      "type": "weapon",
+      "slots": 1,
+      "price_gp": 2,
+      "description": "Traits: Blunt, Missile 40/80/160."
+    },
+    {
+      "name": "Spear",
+      "type": "weapon",
+      "slots": 1,
+      "price_gp": 4,
+      "description": "Traits: Brace, Melee, Missile 20/40/60."
+    },
+    {
+      "name": "Staff",
+      "type": "weapon",
+      "slots": 2,
+      "price_gp": 2,
+      "description": "Traits: Blunt, Melee, Two-handed."
+    },
+    {
+      "name": "Sword",
+      "type": "weapon",
+      "slots": 1,
+      "price_gp": 10,
+      "description": "Traits: Melee, Quick draw, Versatile."
+    },
+    {
+      "name": "Torch",
+      "type": "weapon",
+      "slots": 1,
+      "price_gp": 1,
+      "description": "Traits: Melee. Cost: 1 gp for 6."
+    },
+    {
+      "name": "Two-handed sword",
+      "type": "weapon",
+      "slots": 2,
+      "price_gp": 15,
+      "description": "Traits: Brutal, Deadly, Melee, Slow, Two-handed."
+    },
+    {
+      "name": "War hammer",
+      "type": "weapon",
+      "slots": 1,
+      "price_gp": 5,
+      "description": "Traits: Blunt, Crushing, Melee."
+    },
+    {
+      "name": "Whip",
+      "type": "weapon",
+      "slots": 1,
+      "price_gp": 10,
+      "description": "Traits: Entangle, Melee."
     }
   ]
 }

@@ -8,7 +8,7 @@ Built with React + Vite + Tailwind, with Firebase (Firestore + anonymous auth) f
 
 - **Per-party shared inventory** — every party has a unique URL; share it with the table
 - **Characters, storage, and containers** — characters carry containers; storage entries track party inventory that is not being carried
-- **Coins, treasure, counted items, and equipment suggestions** — platinum / gold / silver / copper, named treasure, count controls for items named like `Torch (3)`, and autocomplete for standard adventuring gear
+- **Coins, treasure, counted items, and equipment suggestions** — platinum / gold / silver / copper, named treasure, count controls for items named like `Torch (3)`, and autocomplete for adventuring gear, armor, and weapons
 - **Item-based encumbrance** — speed is calculated from equipped slots, packed slots, and each character’s STR modifier
 - **Audit log** — see edits, deletes, and cross-character moves; coin edits include the amount changed
 - **Backup and restore** — export or import the full party and audit log as JSON from Settings

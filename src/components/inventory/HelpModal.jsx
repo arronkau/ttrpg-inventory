@@ -85,7 +85,7 @@ export const HelpModal = ({ show, onClose }) => {
             <h4 className="font-semibold text-gray-900 mb-1">Equipment suggestions</h4>
             <p>
               When adding or editing a normal item, type in the item name field to see matching
-              adventuring gear. Selecting a suggestion fills the item name, slot value, and
+              adventuring gear, armor, and weapons. Selecting a suggestion fills the item name, slot value, and
               description.
             </p>
           </section>
