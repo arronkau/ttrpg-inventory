@@ -222,11 +222,12 @@ export const calculateCharacterEncumbrance = (character) => {
 
   const totals = (character?.containers || []).reduce(
     (acc, container) => {
-      const containerSlots = calculateContainerWeight(container);
+      const itemSlots = calculateContainerWeight(container);
       if (isEquippedContainer(container)) {
-        acc.equipped += containerSlots;
+        acc.equipped += itemSlots;
       } else {
-        acc.packed += containerSlots;
+        const containerSlots = Number(container?.weight || 0);
+        acc.packed += itemSlots + containerSlots;
       }
       return acc;
     },

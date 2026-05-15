@@ -77,7 +77,7 @@ export const HelpModal = ({ show, onClose }) => {
               Armor, and Other Equipped. Those containers appear under the Equipped heading and
               count toward equipped slots. Left Hand, Right Hand, and Armor can each hold only one item
               and are filled by dragging items into them. User-created containers appear under the Stowed
-              heading and count toward packed slots.
+              heading and count toward packed slots, including any non-zero container slots.
               The Equipped and Stowed headings each show their section speed; the character header shows
               the slower speed. Edit a character to set their STR modifier directly; that modifier is applied
               to packed slot limits.
