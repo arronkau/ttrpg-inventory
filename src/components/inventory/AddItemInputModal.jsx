@@ -6,7 +6,7 @@ import { usePartyConfig } from "../../contexts/PartyConfigContext";
 export const AddItemInputModal = ({ show, onClose, onSubmit }) => {
   const { weightUnit, coinsPerWeightUnit } = usePartyConfig();
   const [itemName, setItemName] = useState("");
-  const [itemWeightString, setItemWeightString] = useState("");
+  const [itemWeightString, setItemWeightString] = useState("1");
   const [itemDescription, setItemDescription] = useState("");
   const [isUnidentified, setIsUnidentified] = useState(false);
   const [secretName, setSecretName] = useState("");
@@ -93,7 +93,7 @@ export const AddItemInputModal = ({ show, onClose, onSubmit }) => {
 
     // Handle normal items
     const itemWeightPounds = itemWeightString.trim() === ""
-      ? 0
+      ? 1
       : parseWeightInput(itemWeightString);
 
     if (!isNaN(itemWeightPounds)) {
@@ -116,7 +116,7 @@ export const AddItemInputModal = ({ show, onClose, onSubmit }) => {
 
   const resetForm = () => {
     setItemName("");
-    setItemWeightString("");
+    setItemWeightString("1");
     setItemDescription("");
     setIsUnidentified(false);
     setSecretName("");
@@ -308,7 +308,7 @@ export const AddItemInputModal = ({ show, onClose, onSubmit }) => {
               type="text"
               value={itemWeightString}
               onChange={(e) => setItemWeightString(e.target.value)}
-              placeholder={`Slots in ${weightUnit.plural} (e.g., 1 or 2)`}
+              placeholder="Slots"
               className="w-full p-2 border border-gray-300 rounded-md mb-3 text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
             {!isUnidentified && (

@@ -6,10 +6,10 @@ export const isEquippedContainer = (container) =>
   (container?.name || '').trim().toLowerCase() === EQUIPPED_CONTAINER_NAME.toLowerCase();
 
 const MOVEMENT_BANDS = [
-  { speed: "120’ (40’)", speedValue: 120, maxEquipped: 3, maxPacked: 10 },
-  { speed: "90’ (30’)", speedValue: 90, maxEquipped: 5, maxPacked: 12 },
-  { speed: "60’ (20’)", speedValue: 60, maxEquipped: 7, maxPacked: 14 },
-  { speed: "30’ (10’)", speedValue: 30, maxEquipped: 9, maxPacked: 16 },
+  { speed: "120'", speedValue: 120, maxEquipped: 3, maxPacked: 10 },
+  { speed: "90'", speedValue: 90, maxEquipped: 5, maxPacked: 12 },
+  { speed: "60'", speedValue: 60, maxEquipped: 7, maxPacked: 14 },
+  { speed: "30'", speedValue: 30, maxEquipped: 9, maxPacked: 16 },
 ];
 
 const getBandIndexForEquipped = (equippedSlots) =>
@@ -80,7 +80,7 @@ export const calculateCharacterEncumbrance = (character) => {
 
 export const summarizeCharacterEncumbrance = (character) => {
   const encumbrance = calculateCharacterEncumbrance(character);
-  return `Speed ${encumbrance.speed} · Eq ${formatWeightValue(encumbrance.equipped)} · Pack ${formatWeightValue(encumbrance.packed)} · STR ${formatModifier(encumbrance.strengthModifier)}`;
+  return `${encumbrance.speed} · ${formatWeightValue(encumbrance.equipped + encumbrance.packed)} slots`;
 };
 
 export const ensureEquippedDefaultContainer = (containers) => {
@@ -89,7 +89,7 @@ export const ensureEquippedDefaultContainer = (containers) => {
   if (hasEquipped) return defaults;
 
   return [
-    { name: EQUIPPED_CONTAINER_NAME, weight: 0, maxCapacity: 9 },
+    { name: EQUIPPED_CONTAINER_NAME, weight: 0, maxCapacity: 10 },
     ...defaults,
   ];
 };

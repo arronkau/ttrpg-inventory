@@ -5,8 +5,8 @@ export const DEFAULT_PARTY_CONFIG = {
   weightUnit: DEFAULT_WEIGHT_UNIT,
   coinsPerWeightUnit: 100,
   defaultContainers: [
-    { name: 'Equipped', weight: 0, maxCapacity: 9 },
-    { name: 'Backpack', weight: 0, maxCapacity: 16 },
+    { name: 'Equipped', weight: 0, maxCapacity: 10 },
+    { name: 'Backpack', weight: 0, maxCapacity: 10 },
   ],
 };
 

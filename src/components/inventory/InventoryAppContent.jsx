@@ -32,7 +32,6 @@ import { calculateContainerWeight, formatWeight, formatWeightValue } from "../..
 import {
   calculateCharacterEncumbrance,
   ensureEquippedDefaultContainer,
-  formatModifier,
 } from "../../utils/encumbrance";
 import { formatCoins } from "../../utils/coins";
 import {
@@ -2356,10 +2355,8 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
                 {(() => {
                   const encumbrance = calculateCharacterEncumbrance(char);
                   return (
-                    <span className="text-yellow-200 text-sm sm:text-base float-right text-right">
-                      <span className="font-semibold">Speed {encumbrance.speed}</span>
-                      <span className="hidden sm:inline"> · </span>
-                      <span className="block sm:inline">Eq {formatWeightValue(encumbrance.equipped)} / Pack {formatWeightValue(encumbrance.packed)} / STR {formatModifier(encumbrance.strengthModifier)}</span>
+                    <span className="text-yellow-200 text-sm sm:text-base float-right text-right font-semibold">
+                      {encumbrance.speed} · {formatWeightValue(encumbrance.equipped + encumbrance.packed)} slots
                     </span>
                   );
                 })()}
