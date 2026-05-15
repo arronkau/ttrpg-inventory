@@ -1,13 +1,16 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { sanitizeDefaultContainers } from "../../utils/encumbrance";
 
-export const PartyConfigModal = ({ show, onClose, config, onSave }) => {
+export const PartyConfigModal = ({ show, onClose, config, onSave, onExportBackup, onRestoreBackup }) => {
   const [singular, setSingular] = useState(config.weightUnit?.singular || "slot");
   const [plural, setPlural] = useState(config.weightUnit?.plural || "slots");
   const [coinsPerWeightUnit, setCoinsPerWeightUnit] = useState(
     String(config.coinsPerWeightUnit || 100),
   );
   const [containers, setContainers] = useState(sanitizeDefaultContainers(config.defaultContainers || []));
+  const [restoreError, setRestoreError] = useState("");
+  const [isRestoring, setIsRestoring] = useState(false);
+  const restoreFileInputRef = useRef(null);
 
   // Reset local state whenever the modal opens or the upstream config changes.
   useEffect(() => {
@@ -18,6 +21,8 @@ export const PartyConfigModal = ({ show, onClose, config, onSave }) => {
       setContainers(
         sanitizeDefaultContainers(config.defaultContainers || []).map((c) => ({ ...c })),
       );
+      setRestoreError("");
+      setIsRestoring(false);
     }
   }, [show, config]);
 
@@ -43,6 +48,31 @@ export const PartyConfigModal = ({ show, onClose, config, onSave }) => {
 
   const removeContainer = (index) => {
     setContainers((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleRestoreFile = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    const confirmed = window.confirm(
+      'Importing this backup will replace all current characters, containers, items, settings, and audit log entries for this party. Continue?',
+    );
+    if (!confirmed) return;
+
+    setRestoreError('');
+    setIsRestoring(true);
+    try {
+      const text = await file.text();
+      const backup = JSON.parse(text);
+      await onRestoreBackup(backup);
+      onClose();
+    } catch (error) {
+      console.error('Error restoring backup:', error);
+      setRestoreError(error.message || 'Could not restore backup.');
+    } finally {
+      setIsRestoring(false);
+    }
   };
 
   const handleSave = () => {
@@ -126,6 +156,42 @@ export const PartyConfigModal = ({ show, onClose, config, onSave }) => {
                 coins = 1 {(singular.trim() || "slot")}
               </span>
             </label>
+          </section>
+
+          <section>
+            <h4 className="font-semibold text-gray-900 mb-2">Backup and restore</h4>
+            <p className="text-sm text-gray-600 mb-3">
+              Export this party's characters, containers, items, settings, and audit log as JSON. Importing a backup replaces the current party data.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={onExportBackup}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-3 rounded-lg text-sm"
+              >
+                Export backup JSON
+              </button>
+              <button
+                type="button"
+                onClick={() => restoreFileInputRef.current?.click()}
+                disabled={isRestoring}
+                className={`text-white font-bold py-2 px-3 rounded-lg text-sm ${
+                  isRestoring ? 'bg-gray-500 cursor-not-allowed' : 'bg-amber-600 hover:bg-amber-700'
+                }`}
+              >
+                {isRestoring ? 'Restoring…' : 'Import backup JSON'}
+              </button>
+              <input
+                ref={restoreFileInputRef}
+                type="file"
+                accept="application/json,.json"
+                className="hidden"
+                onChange={handleRestoreFile}
+              />
+            </div>
+            {restoreError && (
+              <p className="text-sm text-red-600 mt-2">{restoreError}</p>
+            )}
           </section>
 
           <section>

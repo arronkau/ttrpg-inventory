@@ -11,6 +11,7 @@ Built with React + Vite + Tailwind, with Firebase (Firestore + anonymous auth) f
 - **Coins, treasure, and counted items** — platinum / gold / silver / copper, named treasure, and simple count controls for items named like `Torch (3)`
 - **Item-based encumbrance** — speed is calculated from equipped slots, packed slots, and each character’s STR modifier
 - **Audit log** — see edits, deletes, and cross-character moves; coin edits include the amount changed
+- **Backup and restore** — export or import the full party and audit log as JSON from Settings
 - **Drag-and-drop item movement** — reorder items within a container, move them between containers, or move them between characters
 - **Bulk transfer** — move all of one character's items to another in one click
 - **Import items** — paste a list of items to add at once
@@ -96,9 +97,13 @@ Use the grab handle on the left side of an item to drag it into a new order, int
 
 Any normal item whose name ends in a plain number in parentheses, such as `Torch (3)` or `Iron Spike (12)`, gets small `−` and `+` controls in the item row. These controls only change the number in the item's name; the slot value stays whatever the item is set to use.
 
+### Backup and restore
+
+Open Settings to export a JSON backup containing the party settings, all characters, their containers and items, and the audit log. Importing a backup JSON file replaces the current party data with the contents of that file.
+
 ### Item-based encumbrance
 
-This fork uses Gavin Norman’s item-based encumbrance approach. Each character has four built-in equipped containers: `Left Hand`, `Right Hand`, `Armor`, and `Other Equipped`. Those containers appear under the `Equipped` heading and count toward equipped slots. `Left Hand`, `Right Hand`, and `Armor` can each hold only one item, though that item may be worth multiple slots; those single-item equipped containers are filled by dragging items into them. User-created containers appear under the `Stowed` heading; their contents plus any non-zero container slots count toward packed slots. The `Equipped` and `Stowed` headings each show their own section speed; the character header shows the slower speed. Each character stores a `strengthModifier` directly, and that modifier is applied to the packed-slot movement bands. The numeric item field is still named `weight` for backwards compatibility, but it represents item slots by default.
+This fork uses Gavin Norman’s item-based encumbrance approach. Each character has four built-in equipped containers: `Left Hand`, `Right Hand`, `Armor`, and `Other Equipped`. Those containers appear under the `Equipped` heading and count toward equipped slots. `Left Hand`, `Right Hand`, and `Armor` can each hold only one item, though that item may be worth multiple slots; those single-item equipped containers are filled by dragging items into them. User-created containers appear under the `Stowed` heading; their contents plus any non-zero container slots count toward packed slots. The `Equipped` and `Stowed` headings each show their own max speed and current slot total; the character header shows the slower speed only. Overloaded characters get a red outline, and an overloaded section shows `Overloaded` in red. Each character stores a `strengthModifier` directly, and that modifier is applied to the packed-slot movement bands. The numeric item field is still named `weight` for backwards compatibility, but it represents item slots by default.
 
 ## Bulk import format
 

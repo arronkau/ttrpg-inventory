@@ -88,9 +88,19 @@ export const HelpModal = ({ show, onClose }) => {
               count toward equipped slots. Left Hand, Right Hand, and Armor can each hold only one item
               and are filled by dragging items into them. User-created containers appear under the Stowed
               heading and count toward packed slots, including any non-zero container slots.
-              The Equipped and Stowed headings each show their section speed; the character header shows
-              the slower speed. Edit a character to set their STR modifier directly; that modifier is applied
-              to packed slot limits.
+              The Equipped and Stowed headings each show their max speed and current slot total; the character
+              header shows the slower speed. Overloaded characters get a red outline, and overloaded section
+              headings show Overloaded in red. Edit a character to set their STR modifier directly; that modifier
+              is applied to packed slot limits.
+            </p>
+          </section>
+
+          <section>
+            <h4 className="font-semibold text-gray-900 mb-1">Backup and restore</h4>
+            <p>
+              Open Settings to export the full party as JSON, including characters, containers,
+              items, party settings, and audit log entries. Importing a backup JSON file replaces the
+              current party data.
             </p>
           </section>
 

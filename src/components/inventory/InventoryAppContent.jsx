@@ -5,6 +5,7 @@ import {
   getFirestore,
   doc,
   getDoc,
+  getDocs,
   addDoc,
   updateDoc,
   deleteDoc,
@@ -14,6 +15,7 @@ import {
   orderBy,
   runTransaction,
   setDoc,
+  writeBatch,
 } from "firebase/firestore";
 import { useParams, useNavigate } from "react-router-dom";
 import { AddContainerModal } from "./AddContainerModal";
@@ -476,6 +478,111 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
       console.error("Error adding audit log entry:", error);
     }
   }, [db, appId, partyId]);
+
+  const commitBatchChunks = useCallback(async (operations, chunkSize = 400) => {
+    for (let i = 0; i < operations.length; i += chunkSize) {
+      const batch = writeBatch(db);
+      operations.slice(i, i + chunkSize).forEach((operation) => operation(batch));
+      await batch.commit();
+    }
+  }, [db]);
+
+  const handleExportBackup = useCallback(() => {
+    const backup = {
+      backupVersion: 1,
+      app: 'ttrpg-inventory',
+      exportedAt: new Date().toISOString(),
+      partyId,
+      partyConfig,
+      characters: characters.map((character) => ({
+        ...character,
+        containers: normalizeContainersForEquippedSections(character.containers || []).containers,
+      })),
+      auditLog: auditLog.map((entry) => ({ ...entry })),
+    };
+
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const date = new Date().toISOString().slice(0, 10);
+    link.href = url;
+    link.download = `ttrpg-inventory-backup-${date}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }, [partyId, partyConfig, characters, auditLog]);
+
+  const handleRestoreBackup = useCallback(async (backup) => {
+    if (!db || !partyId) {
+      throw new Error('Database not ready or no party selected.');
+    }
+
+    if (!backup || !Array.isArray(backup.characters) || !Array.isArray(backup.auditLog)) {
+      throw new Error('Backup file must include characters and auditLog arrays.');
+    }
+
+    const charactersRef = collection(
+      db,
+      `artifacts/${appId}/public/data/dnd_inventory/${partyId}/characters`,
+    );
+    const entriesRef = collection(
+      db,
+      `artifacts/${appId}/public/data/dnd_inventory/${partyId}/metadata/party-data/entries`,
+    );
+    const configRef = doc(
+      db,
+      `artifacts/${appId}/public/data/dnd_inventory/${partyId}/metadata`,
+      'party-data',
+    );
+
+    const [existingCharactersSnap, existingEntriesSnap] = await Promise.all([
+      getDocs(charactersRef),
+      getDocs(entriesRef),
+    ]);
+
+    const operations = [];
+    existingCharactersSnap.forEach((characterDoc) => {
+      operations.push((batch) => batch.delete(characterDoc.ref));
+    });
+    existingEntriesSnap.forEach((entryDoc) => {
+      operations.push((batch) => batch.delete(entryDoc.ref));
+    });
+
+    const importedConfig = backup.partyConfig || DEFAULT_PARTY_CONFIG;
+    operations.push((batch) => batch.set(configRef, {
+      weightUnit: importedConfig.weightUnit || DEFAULT_PARTY_CONFIG.weightUnit,
+      coinsPerWeightUnit: importedConfig.coinsPerWeightUnit || DEFAULT_PARTY_CONFIG.coinsPerWeightUnit,
+      defaultContainers: sanitizeDefaultContainers(
+        importedConfig.defaultContainers || DEFAULT_PARTY_CONFIG.defaultContainers,
+      ),
+    }));
+
+    backup.characters.forEach((rawCharacter, index) => {
+      const { id, ...characterData } = rawCharacter || {};
+      const characterId = id || generateId();
+      const normalizedCharacter = normalizeCharacterForEquippedSections({
+        ...characterData,
+        order: characterData.order !== undefined ? characterData.order : index,
+      }).character;
+      const { id: _ignoredId, ...docData } = normalizedCharacter;
+      operations.push((batch) => batch.set(doc(charactersRef, characterId), docData));
+    });
+
+    backup.auditLog.forEach((rawEntry) => {
+      const { id, ...entryData } = rawEntry || {};
+      const entryId = id || generateId();
+      operations.push((batch) => batch.set(doc(entriesRef, entryId), {
+        action: entryData.action || 'restored',
+        description: entryData.description || '',
+        timestamp: entryData.timestamp || new Date().toISOString(),
+      }));
+    });
+
+    await commitBatchChunks(operations);
+    setModalContent('Backup restored. Characters, containers, items, settings, and audit log have been replaced.');
+    setShowModal(true);
+  }, [db, appId, partyId, commitBatchChunks]);
 
   const handleSavePartyConfig = useCallback(async (config) => {
     if (!db || !partyId) return;
@@ -2445,9 +2552,18 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
   );
 
 
-  const renderSectionHeader = (label, speed) => (
-    <div className="mt-2 px-2 py-1 rounded-md bg-gray-900/70 border border-gray-600 text-gray-200 font-semibold flex items-center justify-between">
-      <span>{label} ({speed})</span>
+  const renderSpeedText = (speed) => (
+    <span className={speed === 'Overloaded' ? 'text-red-300' : ''}>
+      {speed}
+    </span>
+  );
+
+  const renderSectionHeader = (label, speed, slots) => (
+    <div className="mt-2 px-2 py-1 rounded-md bg-gray-900/70 border border-gray-600 text-gray-200 font-semibold flex items-center justify-between gap-2">
+      <span>{label} (max {renderSpeedText(speed)})</span>
+      <span className="text-yellow-200 text-sm font-medium shrink-0">
+        {formatWeightValue(slots)} slots
+      </span>
     </div>
   );
 
@@ -2520,11 +2636,9 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
             <span className="mr-2 w-3" aria-hidden="true" />
           )}
           <span className="flex-grow">{title}</span>
-          {!isSingleItemEquipped && (
+          {!isSingleItemEquipped && !isProgrammaticEquipped && (
             <span className="text-yellow-200 ml-auto text-sm font-medium">
-              {isProgrammaticEquipped
-                ? `${formatWeightValue(currentContainerWeight)} slots`
-                : `${formatWeightValue(currentContainerWeight)} / ${formatPartyWeight(container.maxCapacity)}`}
+              {`${formatWeightValue(currentContainerWeight)} / ${formatPartyWeight(container.maxCapacity)}`}
             </span>
           )}
         </h3>
@@ -2927,6 +3041,8 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
         onClose={() => setShowPartyConfigModal(false)}
         config={partyConfig}
         onSave={handleSavePartyConfig}
+        onExportBackup={handleExportBackup}
+        onRestoreBackup={handleRestoreBackup}
       />
 
       <div className="flex flex-col items-center mb-8">
@@ -2967,7 +3083,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
                 {colChars.map((char) => (
             <div
               key={char.id}
-              className="bg-gray-800 rounded-xl shadow-lg p-3 border-2 border-blue-600 flex flex-col transition-all duration-300 hover:shadow-xl hover:border-blue-500"
+              className={`bg-gray-800 rounded-xl shadow-lg p-3 border-2 flex flex-col transition-all duration-300 hover:shadow-xl ${calculateCharacterEncumbrance(char).speed === 'Overloaded' ? 'border-red-500 hover:border-red-400' : 'border-blue-600 hover:border-blue-500'}`}
               onClick={() => {
                 setSelectedCharacterForDetails(char);
                 setShowCharacterDetailsModal(true);
@@ -3000,9 +3116,10 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
                 </h2>
                 {(() => {
                   const encumbrance = calculateCharacterEncumbrance(char);
+                  const overloaded = encumbrance.speed === 'Overloaded';
                   return (
-                    <span className="text-yellow-200 text-sm sm:text-base float-right text-right font-semibold">
-                      {encumbrance.speed} · {formatWeightValue(encumbrance.equipped + encumbrance.packed)} slots
+                    <span className={`${overloaded ? 'text-red-300' : 'text-yellow-200'} text-sm sm:text-base float-right text-right font-semibold`}>
+                      {encumbrance.speed}
                     </span>
                   );
                 })()}
@@ -3018,12 +3135,12 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
 
                     return (
                       <>
-                        {renderSectionHeader('Equipped', encumbrance.equippedSpeed)}
+                        {renderSectionHeader('Equipped', encumbrance.equippedSpeed, encumbrance.equipped)}
                         {equippedContainers.map((container) => renderContainerCard(char, container, {
                           allowCollapse: false,
                           allowDetails: false,
                         }))}
-                        {renderSectionHeader('Stowed', encumbrance.stowedSpeed)}
+                        {renderSectionHeader('Stowed', encumbrance.stowedSpeed, encumbrance.packed)}
                         {stowedContainers.map((container) => renderContainerCard(char, container))}
                       </>
                     );
