@@ -58,6 +58,15 @@ export const HelpModal = ({ show, onClose }) => {
             </ul>
           </section>
 
+          <section>
+            <h4 className="font-semibold text-gray-900 mb-1">Moving items</h4>
+            <p>
+              Drag an item by the grab handle on its left side to reorder it,
+              move it into another container, or move it to another character.
+              Dropping coins into a container that already has coins will merge them.
+            </p>
+          </section>
+
 
           <section>
             <h4 className="font-semibold text-gray-900 mb-1">Item-based encumbrance</h4>

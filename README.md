@@ -11,6 +11,7 @@ Built with React + Vite + Tailwind, with Firebase (Firestore + anonymous auth) f
 - **Coins and treasure** — platinum / gold / silver / copper, with automatic slot calculation; named treasure items track gold value
 - **Item-based encumbrance** — speed is calculated from equipped slots, packed slots, and each character’s STR modifier
 - **Audit log** — see who changed what, when
+- **Drag-and-drop item movement** — reorder items within a container, move them between containers, or move them between characters
 - **Bulk transfer** — move all of one character's items to another in one click
 - **Import items** — paste a list of items to add at once
 - **Real-time sync** — Firestore `onSnapshot` keeps every connected client in lockstep
@@ -86,6 +87,10 @@ artifacts/{appId}/public/data/dnd_inventory/{partyId}/
 ```
 
 A "party" is just a UUID in the URL (`/abcd-1234-...`). New visitors are redirected to either their last visited party (from `localStorage`) or a freshly generated UUID. Share a party URL to share its inventory.
+
+### Item movement
+
+Use the grab handle on the left side of an item to drag it into a new order, into another container, or onto another character's container. Dropping coins into a container that already has coins merges them.
 
 ### Item-based encumbrance
 
