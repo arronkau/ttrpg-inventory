@@ -24,7 +24,7 @@ Firestore layout, scoped per party:
 ```
 artifacts/{appId}/public/data/dnd_inventory/{partyId}/
 ├── characters/{characterId}                          -- one doc per character
-│   └── { name, order, containers: [{ id, name, weight, maxCapacity, items: [...] }] }
+│   └── { name, order, strengthModifier, containers: [{ id, name, weight, maxCapacity, items: [...] }] }
 └── metadata/party-data/entries/{entryId}             -- one doc per audit log entry
     └── { action, description, timestamp }            -- ISO-string timestamp, queried desc
 ```
@@ -66,12 +66,12 @@ When adding a new mutation, follow the existing pattern: validate `db && userId 
 
 Items in a container's `items` array are heterogeneous. The discriminators are:
 
-- `itemType: 'coins'` — has a `coins: { platinum, gold, silver, copper }` object. Weight is computed (`50 coins = 1 lb`, floored) in `src/utils/coins.js`. When adding/transferring coins into a container, code should merge with any existing coins item — see the merge logic in `handleAddItemSubmit` and `mergeContainerCoins`.
+- `itemType: 'coins'` — has a `coins: { platinum, gold, silver, copper }` object. Slots are computed (`100 coins = 1 slot`, rounded up) in `src/utils/coins.js`. When adding/transferring coins into a container, code should merge with any existing coins item — see the merge logic in `handleAddItemSubmit` and `mergeContainerCoins`.
 - `itemType: 'treasure'` — has `goldValue`, `quantity`, `weightPerItem`. Can be "liquidated" into a coins item.
 - `isUnidentified: true` — has `secretName` and `secretDescription` shown only in details until the item is "identified."
 - otherwise: a plain item with `name`, `weight`, `description`.
 
-Weights are stored as pounds (despite the `formatWeightInStones` legacy name in `src/utils/utils.js`, which is now just an alias for `formatWeight`).
+The stored numeric field is still named `weight` for backwards compatibility, but it represents item slots by default. A container named `Equipped` counts toward equipped slots; items in all other containers count toward packed slots. Character `strengthModifier` is stored directly and applied to packed slot thresholds.
 
 ### Firebase config
 

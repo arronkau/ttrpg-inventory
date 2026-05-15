@@ -1,57 +1,57 @@
-// Weight utility functions for OSRIC inventory system
-// Base unit: pounds (lbs)
+// Encumbrance utility functions.
+// The stored numeric field is still named `weight` for backwards compatibility,
+// but this fork treats it as an item-slot count by default.
 
-export const DEFAULT_WEIGHT_UNIT = { singular: 'lb', plural: 'lbs' };
+export const DEFAULT_WEIGHT_UNIT = { singular: 'slot', plural: 'slots' };
 
 /**
- * Format weight for display
- * @param {number} totalPounds - Weight in pounds (or whatever the configured unit measures)
+ * Format an encumbrance value for display.
+ * @param {number} total - Slot count or other configured unit value.
  * @param {{singular: string, plural: string}} [unit=DEFAULT_WEIGHT_UNIT]
  * @returns {string}
  */
-export const formatWeightValue = (totalPounds) => {
-  const rounded = Math.round((totalPounds || 0) * 100) / 100;
+export const formatWeightValue = (total) => {
+  const rounded = Math.round((total || 0) * 100) / 100;
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2).replace(/\.?0+$/, '');
 };
 
-export const formatWeight = (totalPounds, unit = DEFAULT_WEIGHT_UNIT) => {
-  const rounded = Math.round((totalPounds || 0) * 100) / 100;
-  const value = formatWeightValue(totalPounds);
+export const formatWeight = (total, unit = DEFAULT_WEIGHT_UNIT) => {
+  const rounded = Math.round((total || 0) * 100) / 100;
+  const value = formatWeightValue(total);
   const suffix = Math.abs(rounded) === 1 ? unit.singular : unit.plural;
   return `${value} ${suffix}`;
 };
 
 /**
- * Calculate total weight of items in a container
+ * Calculate total item slots in a container.
+ * Item `weight` values are treated as already-total slot counts. This avoids
+ * double-counting treasure, where `weight` is stored as quantity × slots each.
  * @param {object} container - Container with items array
- * @returns {number} - Total weight in pounds
+ * @returns {number} - Total item slots
  */
 export const calculateContainerWeight = (container) => {
   return (container?.items || []).reduce(
-    (total, item) => total + (item?.weight || 0) * (item?.quantity || 1),
+    (total, item) => total + (Number(item?.weight) || 0),
     0,
   );
 };
 
 /**
- * Parse weight input string to pounds
- * Now expects direct pound values (e.g., "5" = 5 lbs)
- * @param {string} weightString - Weight input string
- * @returns {number} - Weight in pounds, or NaN if invalid
+ * Parse a slot/unit input string.
+ * Accepts direct numeric values and ignores common legacy suffixes.
+ * @param {string} weightString - Encumbrance input string
+ * @returns {number} - Encumbrance value, or NaN if invalid
  */
 export const parseWeightInput = (weightString) => {
   weightString = String(weightString).trim();
   if (!weightString) return NaN;
 
-  // Remove "lbs" or "lb" suffix if present
-  weightString = weightString.replace(/\s*(lbs?|pounds?)$/i, '').trim();
+  // Remove common unit suffixes if present.
+  weightString = weightString.replace(/\s*(lbs?|pounds?|slots?|items?)$/i, '').trim();
 
-  // Parse as a simple number
   const value = parseFloat(weightString);
 
   if (isNaN(value)) return NaN;
 
-  // Round to 2 decimal places
   return Math.round(value * 100) / 100;
 };
-

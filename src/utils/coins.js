@@ -1,11 +1,11 @@
 /**
- * Coin utilities for OSRIC inventory management
+ * Coin utilities for item-based inventory management
  *
- * Coin denominations: platinum (p), gold (g), silver (s), copper (c)
- * Weight: configurable coins-per-weight-unit; default 50 (e.g. 50 coins = 1 lb).
+ * Coin denominations: platinum (p), gold (g), silver (s), copper (c).
+ * Encumbrance: configurable coins-per-slot; default 100 (up to 100 coins = 1 slot).
  */
 
-export const DEFAULT_COINS_PER_WEIGHT_UNIT = 50;
+export const DEFAULT_COINS_PER_WEIGHT_UNIT = 100;
 
 // Parse coin string like "123p 456g 789s 555c" into object
 export function parseCoins(coinString) {
@@ -47,10 +47,11 @@ export function getTotalCoinCount(coins) {
   return (coins.platinum || 0) + (coins.gold || 0) + (coins.silver || 0) + (coins.copper || 0);
 }
 
-// Calculate weight of coins (rounded down). `ratio` is coins per weight unit.
+// Calculate item slots for coins. `ratio` is coins per slot.
 export function calculateCoinWeight(coins, ratio = DEFAULT_COINS_PER_WEIGHT_UNIT) {
   const totalCoins = getTotalCoinCount(coins);
-  return Math.floor(totalCoins / ratio);
+  if (totalCoins <= 0) return 0;
+  return Math.ceil(totalCoins / ratio);
 }
 
 // Merge two coin objects

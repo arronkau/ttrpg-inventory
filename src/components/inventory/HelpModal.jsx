@@ -51,11 +51,21 @@ export const HelpModal = ({ show, onClose }) => {
               </li>
               <li>
                 <span className="text-yellow-600 font-semibold">$ Coins</span> —
-                platinum / gold / silver / copper. Weight is automatic
+                platinum / gold / silver / copper. Slots are automatic
                 ({coinsPerWeightUnit} coins = 1 {weightUnit.singular}). Coins added to a container that already has
                 coins will merge.
               </li>
             </ul>
+          </section>
+
+
+          <section>
+            <h4 className="font-semibold text-gray-900 mb-1">Item-based encumbrance</h4>
+            <p>
+              A container named <span className="font-semibold">Equipped</span> counts
+              toward equipped slots. Items in every other container count toward packed slots.
+              Edit a character to set their STR modifier directly; that modifier is applied to packed slot limits.
+            </p>
           </section>
 
           <section>

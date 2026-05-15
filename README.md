@@ -8,8 +8,8 @@ Built with React + Vite + Tailwind, with Firebase (Firestore + anonymous auth) f
 
 - **Per-party shared inventory** — every party has a unique URL; share it with the table
 - **Characters and containers** — each character holds containers (backpack, mule, chest, etc.); containers hold items
-- **Coins and treasure** — platinum / gold / silver / copper, with automatic weight calculation; named treasure items track gold value
-- **Weights and encumbrance** — formatted weight totals per container, character, and party
+- **Coins and treasure** — platinum / gold / silver / copper, with automatic slot calculation; named treasure items track gold value
+- **Item-based encumbrance** — speed is calculated from equipped slots, packed slots, and each character’s STR modifier
 - **Audit log** — see who changed what, when
 - **Bulk transfer** — move all of one character's items to another in one click
 - **Import items** — paste a list of items to add at once
@@ -79,13 +79,17 @@ The Firestore layout looks like:
 ```
 artifacts/{appId}/public/data/dnd_inventory/{partyId}/
 ├── characters/{characterId}                          -- one doc per character
-│   ├── name, order
-│   └── containers: [{ id, name, weight, items: [...] }]
+│   ├── name, order, strengthModifier
+│   └── containers: [{ id, name, weight, maxCapacity, items: [...] }]
 └── metadata/party-data/entries/{entryId}             -- one doc per audit log entry
     └── action, description, timestamp                -- ISO string, queried desc
 ```
 
 A "party" is just a UUID in the URL (`/abcd-1234-...`). New visitors are redirected to either their last visited party (from `localStorage`) or a freshly generated UUID. Share a party URL to share its inventory.
+
+### Item-based encumbrance
+
+This fork uses Gavin Norman’s item-based encumbrance approach. A container named `Equipped` is special: every item in it counts as equipped. Items in any other container count as packed. Each character stores a `strengthModifier` directly, and that modifier is applied to the packed-slot movement bands. The numeric item field is still named `weight` for backwards compatibility, but it represents item slots by default.
 
 ## Bulk import format
 
@@ -94,13 +98,13 @@ The `{ }` button next to "Add Item" accepts a JSON array — one object per item
 **Normal items**
 
 ```json
-{ "name": "Longsword", "weight": 4, "description": "A fine steel blade" }
+{ "name": "Longsword", "weight": 1, "description": "A fine steel blade" }
 ```
 
 | Field | Required | Default |
 |---|---|---|
 | `name` | ✓ | — |
-| `weight` | | `0` (lbs) |
+| `weight` | | `0` (slots) |
 | `description` | | `""` |
 | `isUnidentified` | | `false` |
 | `secretName` | when unidentified | `""` |
@@ -112,12 +116,12 @@ The `{ }` button next to "Add Item" accepts a JSON array — one object per item
 { "itemType": "coins", "coins": { "gold": 50, "silver": 20 } }
 ```
 
-`coins` takes any of `platinum`, `gold`, `silver`, `copper` (at least one must be > 0). Weight is computed (50 coins = 1 lb, floored). Importing coins into a container that already has a coins item merges them.
+`coins` takes any of `platinum`, `gold`, `silver`, `copper` (at least one must be > 0). Slots are computed (up to 100 coins = 1 slot, rounded up). Importing coins into a container that already has a coins item merges them.
 
 **Treasure** (`itemType: "treasure"`)
 
 ```json
-{ "itemType": "treasure", "name": "Ruby", "goldValue": 100, "quantity": 2, "weightPerItem": 0.1 }
+{ "itemType": "treasure", "name": "Ruby", "goldValue": 100, "quantity": 2, "weightPerItem": 0 }
 ```
 
 | Field | Required | Default |
@@ -128,7 +132,7 @@ The `{ }` button next to "Add Item" accepts a JSON array — one object per item
 | `weightPerItem` | | `0` |
 | `description` | | `""` |
 
-Total weight is `weightPerItem × quantity`. Treasure can be liquidated into coins from the item details modal.
+Total slots is `weightPerItem × quantity`. Treasure can be liquidated into coins from the item details modal.
 
 You can paste a single object instead of an array if you're only adding one item.
 

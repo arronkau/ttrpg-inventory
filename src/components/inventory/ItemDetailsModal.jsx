@@ -184,7 +184,7 @@ export const ItemDetailsModal = ({
           copper: parseInt(editedCopper, 10) || 0,
         };
         const totalCoins = coins.platinum + coins.gold + coins.silver + coins.copper;
-        const coinWeight = Math.floor(totalCoins / coinsPerWeightUnit);
+        const coinWeight = Math.ceil(totalCoins / coinsPerWeightUnit);
         const parts = [];
         if (coins.platinum > 0) parts.push(`${coins.platinum}p`);
         if (coins.gold > 0) parts.push(`${coins.gold}g`);
@@ -223,7 +223,7 @@ export const ItemDetailsModal = ({
         // Normal item
         const parsedWeight = parseWeightInput(editedWeightString);
         if (isNaN(parsedWeight)) {
-          alert("Invalid weight format. Please enter a number (e.g., '5' or '0.5').");
+          alert("Invalid slot format. Please enter a number (e.g., '1' or '2').");
           return;
         }
         onSaveItem(item.id, {
@@ -250,7 +250,7 @@ export const ItemDetailsModal = ({
       return;
     }
 
-    // Handle treasure items (no type change) - update gold value, quantity, and weight
+    // Handle treasure items (no type change) - update gold value, quantity, and slots
     if (editedItemType === 'treasure' && onSaveItem) {
       const qty = parseInt(editedQuantity, 10) || 1;
       const goldValue = parseInt(editedGoldValue, 10) || 0;
@@ -279,7 +279,7 @@ export const ItemDetailsModal = ({
     const parsedWeight = parseWeightInput(editedWeightString);
     if (isNaN(parsedWeight)) {
       alert(
-        "Invalid weight format. Please enter a number (e.g., '5' or '0.5').",
+        "Invalid slot format. Please enter a number (e.g., '1' or '2').",
       );
       return;
     }
@@ -305,7 +305,7 @@ export const ItemDetailsModal = ({
   const displayIsCoins = displayType === 'coins';
   const displayIsTreasure = displayType === 'treasure';
 
-  // Calculate weight preview for coin editing
+  // Calculate slot preview for coin editing
   const editedCoinWeight = isEditing && displayIsCoins
     ? calculateCoinWeight({
         platinum: parseInt(editedPlatinum, 10) || 0,
@@ -450,7 +450,7 @@ export const ItemDetailsModal = ({
               </div>
             </div>
             <p className="text-xs text-gray-500 mt-2">
-              Weight: {editedCoinWeight} {weightUnit.plural} ({coinsPerWeightUnit} coins = 1 {weightUnit.singular})
+              Slots: {editedCoinWeight} {weightUnit.plural} ({coinsPerWeightUnit} coins = 1 {weightUnit.singular})
             </p>
           </div>
         )}
@@ -481,7 +481,7 @@ export const ItemDetailsModal = ({
                 />
               </div>
               <div className="flex-1">
-                <label className="block text-xs text-gray-600">Weight (each)</label>
+                <label className="block text-xs text-gray-600">Slots (each)</label>
                 <input
                   type="number"
                   min="0"
@@ -530,16 +530,16 @@ export const ItemDetailsModal = ({
           </div>
         )}
 
-        {/* Weight display - skip for coins when editing */}
+        {/* Slots display - skip for coins when editing */}
         {!(displayIsCoins && isEditing) && (
           <p className="text-lg font-medium mb-3">
-            Weight:{" "}
+            Slots:{" "}
             {isEditing && !displayIsCoins ? (
               <input
                 type="text"
                 value={editedWeightString}
                 onChange={(e) => setEditedWeightString(e.target.value)}
-                placeholder={`Weight in ${weightUnit.plural}`}
+                placeholder={`Slots in ${weightUnit.plural}`}
                 className="w-full p-2 border border-gray-300 rounded-md text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             ) : (

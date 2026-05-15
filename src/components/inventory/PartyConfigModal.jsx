@@ -1,19 +1,19 @@
 import { useState, useEffect } from "react";
 
 export const PartyConfigModal = ({ show, onClose, config, onSave }) => {
-  const [singular, setSingular] = useState(config.weightUnit?.singular || "lb");
-  const [plural, setPlural] = useState(config.weightUnit?.plural || "lbs");
+  const [singular, setSingular] = useState(config.weightUnit?.singular || "slot");
+  const [plural, setPlural] = useState(config.weightUnit?.plural || "slots");
   const [coinsPerWeightUnit, setCoinsPerWeightUnit] = useState(
-    String(config.coinsPerWeightUnit || 50),
+    String(config.coinsPerWeightUnit || 100),
   );
   const [containers, setContainers] = useState(config.defaultContainers || []);
 
   // Reset local state whenever the modal opens or the upstream config changes.
   useEffect(() => {
     if (show) {
-      setSingular(config.weightUnit?.singular || "lb");
-      setPlural(config.weightUnit?.plural || "lbs");
-      setCoinsPerWeightUnit(String(config.coinsPerWeightUnit || 50));
+      setSingular(config.weightUnit?.singular || "slot");
+      setPlural(config.weightUnit?.plural || "slots");
+      setCoinsPerWeightUnit(String(config.coinsPerWeightUnit || 100));
       setContainers(
         (config.defaultContainers || []).map((c) => ({ ...c })),
       );
@@ -45,9 +45,9 @@ export const PartyConfigModal = ({ show, onClose, config, onSave }) => {
   };
 
   const handleSave = () => {
-    const trimmedSingular = singular.trim() || "lb";
+    const trimmedSingular = singular.trim() || "slot";
     const trimmedPlural = plural.trim() || trimmedSingular;
-    const ratio = Math.max(1, Math.floor(Number(coinsPerWeightUnit) || 50));
+    const ratio = Math.max(1, Math.floor(Number(coinsPerWeightUnit) || 100));
     const cleanedContainers = containers
       .map((c) => ({
         name: (c.name || "").trim(),
@@ -81,10 +81,7 @@ export const PartyConfigModal = ({ show, onClose, config, onSave }) => {
           <section>
             <h4 className="font-semibold text-gray-900 mb-2">Encumbrance unit</h4>
             <p className="text-sm text-gray-600 mb-2">
-              How weights are labelled throughout the app. Common choices:{" "}
-              <span className="font-mono">lb / lbs</span>,{" "}
-              <span className="font-mono">cn / cn</span>,{" "}
-              <span className="font-mono">st / st</span>,{" "}
+              How encumbrance values are labelled throughout the app. This fork defaults to {" "}
               <span className="font-mono">slot / slots</span>.
             </p>
             <div className="flex gap-3">
@@ -110,10 +107,10 @@ export const PartyConfigModal = ({ show, onClose, config, onSave }) => {
           </section>
 
           <section>
-            <h4 className="font-semibold text-gray-900 mb-2">Coin weight</h4>
+            <h4 className="font-semibold text-gray-900 mb-2">Coin slots</h4>
             <p className="text-sm text-gray-600 mb-2">
-              How many coins of any denomination weigh one unit. OSRIC / classic
-              D&D uses 10; AD&D 1e and many retroclones use 50.
+              How many coins or gems count as one item slot. The item-based
+              encumbrance rules use 100.
             </p>
             <label className="flex items-center gap-2 text-sm">
               <input
@@ -125,7 +122,7 @@ export const PartyConfigModal = ({ show, onClose, config, onSave }) => {
                 className="w-24 p-2 border border-gray-300 rounded-md text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
               <span className="text-gray-700">
-                coins = 1 {(singular.trim() || "lb")}
+                coins = 1 {(singular.trim() || "slot")}
               </span>
             </label>
           </section>
@@ -133,7 +130,8 @@ export const PartyConfigModal = ({ show, onClose, config, onSave }) => {
           <section>
             <h4 className="font-semibold text-gray-900 mb-2">Default containers for new characters</h4>
             <p className="text-sm text-gray-600 mb-2">
-              Each new character is created with these containers. Existing
+              Each new character is created with these containers. A container named
+              Equipped is treated as equipped gear; all other containers count as packed gear. Existing
               characters are unchanged.
             </p>
             <div className="space-y-2">
@@ -155,7 +153,7 @@ export const PartyConfigModal = ({ show, onClose, config, onSave }) => {
                       />
                     </label>
                     <label className="w-24 text-sm">
-                      <span className="block font-medium text-gray-700 mb-1">Weight</span>
+                      <span className="block font-medium text-gray-700 mb-1">Container Slots</span>
                       <input
                         type="number"
                         step="0.01"

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { formatModifier } from "../../utils/encumbrance";
 
 export const CharacterDetailsModal = ({
   show,
@@ -12,9 +13,13 @@ export const CharacterDetailsModal = ({
   const [editedName, setEditedName] = useState(
     character ? character.name || "" : "",
   );
+  const [editedStrengthModifier, setEditedStrengthModifier] = useState(
+    character ? String(character.strengthModifier || 0) : "0",
+  );
 
   useEffect(() => {
     setEditedName(character ? character.name || "" : "");
+    setEditedStrengthModifier(character ? String(character.strengthModifier || 0) : "0");
     setIsEditing(false);
   }, [character, show]);
 
@@ -30,7 +35,13 @@ export const CharacterDetailsModal = ({
   if (!show || !character) return null;
 
   const handleSave = () => {
-    onSaveCharacter(character.id, editedName);
+    const parsedStrengthModifier = Number(editedStrengthModifier);
+    if (!Number.isFinite(parsedStrengthModifier)) {
+      alert("Invalid STR modifier. Please enter a number, such as -1, 0, or 2.");
+      return;
+    }
+
+    onSaveCharacter(character.id, editedName, Math.trunc(parsedStrengthModifier));
     setIsEditing(false);
   };
 
@@ -64,6 +75,21 @@ export const CharacterDetailsModal = ({
             />
           ) : (
             <p className="text-gray-700">{character.name}</p>
+          )}
+        </div>
+
+        <div className="mb-4">
+          <p className="font-semibold text-lg mb-2">STR Modifier:</p>
+          {isEditing ? (
+            <input
+              type="number"
+              step="1"
+              value={editedStrengthModifier}
+              onChange={(e) => setEditedStrengthModifier(e.target.value)}
+              className="w-full p-2 border border-gray-300 rounded-md text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          ) : (
+            <p className="text-gray-700">{formatModifier(character.strengthModifier || 0)}</p>
           )}
         </div>
 

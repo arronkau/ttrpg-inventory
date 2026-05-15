@@ -57,14 +57,14 @@ export const ContainerDetailsModal = ({
     const parsedMaxCapacity = parseWeightInput(editedMaxCapacityString);
     if (isNaN(parsedWeight)) {
       alert(
-        "Invalid weight format. Please enter a number (e.g., '5' or '0.5').",
+        "Invalid container slot format. Please enter a number (usually 0 for containers in use).",
       );
       return;
     }
 
     if (isNaN(parsedMaxCapacity) || parsedMaxCapacity < 0) {
       alert(
-        "Invalid capacity format. Capacity must be a positive number (e.g., '10' or '5.5').",
+        "Invalid capacity format. Capacity must be a positive number (e.g., '10' or '16').",
       );
       return;
     }
@@ -107,13 +107,13 @@ export const ContainerDetailsModal = ({
         </div>
 
         <div className="mb-4">
-          <p className="font-semibold text-lg mb-2">Weight:</p>
+          <p className="font-semibold text-lg mb-2">Container Slots:</p>
           {isEditing ? (
             <input
               type="text"
               value={editedWeightString}
               onChange={(e) => setEditedWeightString(e.target.value)}
-              placeholder={`Weight in ${weightUnit.plural} (e.g., 2)`}
+              placeholder={`Container slots in ${weightUnit.plural} (usually 0)`}
               className="w-full p-2 border border-gray-300 rounded-md text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           ) : (
@@ -130,7 +130,7 @@ export const ContainerDetailsModal = ({
               type="text"
               value={editedMaxCapacityString}
               onChange={(e) => setEditedMaxCapacityString(e.target.value)}
-              placeholder={`Max Capacity in ${weightUnit.plural} (e.g., 30)`}
+              placeholder={`Max capacity in ${weightUnit.plural} (e.g., 16)`}
               className="w-full p-2 border border-gray-300 rounded-md text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           ) : (

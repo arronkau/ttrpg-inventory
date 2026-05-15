@@ -29,6 +29,11 @@ import { ImportItemsModal } from "./ImportItemsModal";
 import { HelpModal } from "./HelpModal";
 import { PartyConfigModal } from "./PartyConfigModal";
 import { calculateContainerWeight, formatWeight, formatWeightValue } from "../../utils/utils";
+import {
+  calculateCharacterEncumbrance,
+  ensureEquippedDefaultContainer,
+  formatModifier,
+} from "../../utils/encumbrance";
 import { formatCoins } from "../../utils/coins";
 import {
   PartyConfigContext,
@@ -36,14 +41,6 @@ import {
 } from "../../contexts/PartyConfigContext";
 
 const generateId = () => crypto.randomUUID();
-
-const calculateCharacterTotalWeight = (char) => {
-  return (char?.containers || []).reduce(
-    (total, container) =>
-      total + calculateContainerWeight(container) + container.weight,
-    0,
-  );
-};
 
 export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp, auth: authProp }) {
   const { partyId } = useParams();
@@ -354,7 +351,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
           setPartyConfig({
             weightUnit: data.weightUnit || DEFAULT_PARTY_CONFIG.weightUnit,
             coinsPerWeightUnit: data.coinsPerWeightUnit || DEFAULT_PARTY_CONFIG.coinsPerWeightUnit,
-            defaultContainers: data.defaultContainers || DEFAULT_PARTY_CONFIG.defaultContainers,
+            defaultContainers: ensureEquippedDefaultContainer(data.defaultContainers || DEFAULT_PARTY_CONFIG.defaultContainers),
           });
         },
         (error) => {
@@ -397,7 +394,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
       await setDoc(configRef, {
         weightUnit: config.weightUnit,
         coinsPerWeightUnit: config.coinsPerWeightUnit,
-        defaultContainers: config.defaultContainers,
+        defaultContainers: ensureEquippedDefaultContainer(config.defaultContainers),
       }, { merge: true });
       await addAuditLogEntry('edited', 'party settings');
     } catch (error) {
@@ -541,11 +538,14 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
       onSubmit: async (characterName) => {
         if (characterName) {
           try {
-            const defaults = (partyConfig.defaultContainers && partyConfig.defaultContainers.length > 0)
-              ? partyConfig.defaultContainers
-              : DEFAULT_PARTY_CONFIG.defaultContainers;
+            const defaults = ensureEquippedDefaultContainer(
+              (partyConfig.defaultContainers && partyConfig.defaultContainers.length > 0)
+                ? partyConfig.defaultContainers
+                : DEFAULT_PARTY_CONFIG.defaultContainers,
+            );
             const newCharacter = {
               name: characterName,
+              strengthModifier: 0,
               containers: defaults.map((c) => ({
                 id: generateId(),
                 name: c.name,
@@ -671,7 +671,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
                     copper: (existingCoins.coins?.copper || 0) + (extraData.coins?.copper || 0),
                   };
                   const totalCoins = mergedCoins.platinum + mergedCoins.gold + mergedCoins.silver + mergedCoins.copper;
-                  const coinWeight = Math.floor(totalCoins / partyConfig.coinsPerWeightUnit);
+                  const coinWeight = Math.ceil(totalCoins / partyConfig.coinsPerWeightUnit);
                   const parts = [];
                   if (mergedCoins.platinum > 0) parts.push(`${mergedCoins.platinum}p`);
                   if (mergedCoins.gold > 0) parts.push(`${mergedCoins.gold}g`);
@@ -729,7 +729,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
       }
     } else {
       setModalContent(
-        `Invalid item name or weight. Please enter a valid name and a non-negative number for weight in ${partyConfig.weightUnit.plural} (e.g., '5' or '0.5').`,
+        `Invalid item name or slots. Please enter a valid name and a non-negative number of ${partyConfig.weightUnit.plural} (e.g., '1' or '2').`,
       );
       setShowModal(true);
     }
@@ -847,14 +847,14 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
       }
     } else {
       setModalContent(
-        `Invalid container data. Please enter a valid name, weight (can be negative), and a non-negative capacity in ${partyConfig.weightUnit.plural} (e.g., '10' or '5.5').`,
+        `Invalid container data. Please enter a valid name, container slots (usually 0), and a non-negative capacity in ${partyConfig.weightUnit.plural} (e.g., '10' or '5.5').`,
       );
       setShowModal(true);
     }
   };
 
   const handleSaveCharacterDetails = useCallback(
-    async (charId, newName) => {
+    async (charId, newName, newStrengthModifier = 0) => {
       if (!db || !userId || !partyId) {
         setModalContent(
           "Error: Cannot save character details. Database not ready or user not authenticated.",
@@ -872,7 +872,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
         const characterDoc = await getDoc(characterRef);
 
         if (characterDoc.exists()) {
-          await updateDoc(characterRef, { name: newName });
+          await updateDoc(characterRef, { name: newName, strengthModifier: newStrengthModifier });
         }
       } catch (error) {
         console.error("Error saving character details:", error);
@@ -994,7 +994,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
                 copper: (existingCoins.coins?.copper || 0) + (updatedFields.coins?.copper || 0),
               };
               const totalCoins = mergedCoins.platinum + mergedCoins.gold + mergedCoins.silver + mergedCoins.copper;
-              const coinWeight = Math.floor(totalCoins / partyConfig.coinsPerWeightUnit);
+              const coinWeight = Math.ceil(totalCoins / partyConfig.coinsPerWeightUnit);
               const parts = [];
               if (mergedCoins.platinum > 0) parts.push(`${mergedCoins.platinum}p`);
               if (mergedCoins.gold > 0) parts.push(`${mergedCoins.gold}g`);
@@ -1293,7 +1293,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
 
         const buildCoinItem = (coins, id) => {
           const total = (coins.platinum || 0) + (coins.gold || 0) + (coins.silver || 0) + (coins.copper || 0);
-          const weight = Math.floor(total / partyConfig.coinsPerWeightUnit);
+          const weight = Math.ceil(total / partyConfig.coinsPerWeightUnit);
           const parts = [];
           if (coins.platinum > 0) parts.push(`${coins.platinum}p`);
           if (coins.gold > 0) parts.push(`${coins.gold}g`);
@@ -1752,7 +1752,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
           const characterData = characterDoc.data();
 
           const totalCoins = (coins.platinum || 0) + (coins.gold || 0) + (coins.silver || 0) + (coins.copper || 0);
-          const coinWeight = Math.floor(totalCoins / partyConfig.coinsPerWeightUnit);
+          const coinWeight = Math.ceil(totalCoins / partyConfig.coinsPerWeightUnit);
           const parts = [];
           if (coins.platinum > 0) parts.push(`${coins.platinum}p`);
           if (coins.gold > 0) parts.push(`${coins.gold}g`);
@@ -1864,7 +1864,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
                   copper: existingCoins.coins?.copper || 0,
                 };
                 const totalCoins = mergedCoins.platinum + mergedCoins.gold + mergedCoins.silver + mergedCoins.copper;
-                const coinWeight = Math.floor(totalCoins / partyConfig.coinsPerWeightUnit);
+                const coinWeight = Math.ceil(totalCoins / partyConfig.coinsPerWeightUnit);
                 const parts = [];
                 if (mergedCoins.platinum > 0) parts.push(`${mergedCoins.platinum}p`);
                 if (mergedCoins.gold > 0) parts.push(`${mergedCoins.gold}g`);
@@ -1891,7 +1891,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
               silver: 0,
               copper: 0,
             };
-            const coinWeight = Math.floor(goldValue / partyConfig.coinsPerWeightUnit);
+            const coinWeight = Math.ceil(goldValue / partyConfig.coinsPerWeightUnit);
             const coinName = `$ ${goldValue}g`;
 
             updatedContainers = characterData.containers.map((cont) => {
@@ -1987,7 +1987,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
                     copper: (existingCoins.coins?.copper || 0) + importedCoins.copper,
                   };
                   const totalCoins = mergedCoins.platinum + mergedCoins.gold + mergedCoins.silver + mergedCoins.copper;
-                  const coinWeight = Math.floor(totalCoins / partyConfig.coinsPerWeightUnit);
+                  const coinWeight = Math.ceil(totalCoins / partyConfig.coinsPerWeightUnit);
                   const parts = [];
                   if (mergedCoins.platinum > 0) parts.push(`${mergedCoins.platinum}p`);
                   if (mergedCoins.gold > 0) parts.push(`${mergedCoins.gold}g`);
@@ -2002,7 +2002,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
                   };
                 } else {
                   const totalCoins = importedCoins.platinum + importedCoins.gold + importedCoins.silver + importedCoins.copper;
-                  const coinWeight = Math.floor(totalCoins / partyConfig.coinsPerWeightUnit);
+                  const coinWeight = Math.ceil(totalCoins / partyConfig.coinsPerWeightUnit);
                   const parts = [];
                   if (importedCoins.platinum > 0) parts.push(`${importedCoins.platinum}p`);
                   if (importedCoins.gold > 0) parts.push(`${importedCoins.gold}g`);
@@ -2235,8 +2235,8 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
             setSelectedCharacterForDetails(null);
           }}
           character={selectedCharacterForDetails}
-          onSaveCharacter={(id, newName) =>
-            handleSaveCharacterDetails(id, newName)
+          onSaveCharacter={(id, newName, newStrengthModifier) =>
+            handleSaveCharacterDetails(id, newName, newStrengthModifier)
           }
           onDeleteCharacter={() =>
             handleDeleteCharacterConfirmation(
@@ -2353,9 +2353,16 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
                   )}
                   {char.name}
                 </h2>
-                <span className="text-yellow-200 text-base float-right">
-                  {formatPartyWeight(calculateCharacterTotalWeight(char))}
-                </span>
+                {(() => {
+                  const encumbrance = calculateCharacterEncumbrance(char);
+                  return (
+                    <span className="text-yellow-200 text-sm sm:text-base float-right text-right">
+                      <span className="font-semibold">Speed {encumbrance.speed}</span>
+                      <span className="hidden sm:inline"> · </span>
+                      <span className="block sm:inline">Eq {formatWeightValue(encumbrance.equipped)} / Pack {formatWeightValue(encumbrance.packed)} / STR {formatModifier(encumbrance.strengthModifier)}</span>
+                    </span>
+                  );
+                })()}
               </div>
 
               {!Object.prototype.hasOwnProperty.call(collapsedCharacters, char.id) || collapsedCharacters[char.id] ? (

@@ -2,10 +2,10 @@ import { useState, useEffect } from "react";
 import { usePartyConfig } from "../../contexts/PartyConfigContext";
 
 const EXAMPLE_JSON = `[
-  { "name": "Longsword", "weight": 4, "description": "A fine steel blade" },
+  { "name": "Longsword", "weight": 1, "description": "A fine steel blade" },
   { "name": "Torch", "weight": 1 },
   { "itemType": "coins", "coins": { "gold": 50, "silver": 20 } },
-  { "itemType": "treasure", "name": "Ruby", "goldValue": 100, "quantity": 2, "weightPerItem": 0.1 }
+  { "itemType": "treasure", "name": "Ruby", "goldValue": 100, "quantity": 2, "weightPerItem": 0 }
 ]`;
 
 export const ImportItemsModal = ({ show, onClose, onImport }) => {
@@ -58,7 +58,7 @@ export const ImportItemsModal = ({ show, onClose, onImport }) => {
           if (totalCoins <= 0) {
             throw new Error(`Item ${index + 1}: Coins must have at least one denomination`);
           }
-          const weight = Math.floor(totalCoins / coinsPerWeightUnit);
+          const weight = Math.ceil(totalCoins / coinsPerWeightUnit);
           const parts = [];
           if (coins.platinum > 0) parts.push(`${coins.platinum}p`);
           if (coins.gold > 0) parts.push(`${coins.gold}g`);
@@ -208,7 +208,7 @@ export const ImportItemsModal = ({ show, onClose, onImport }) => {
                     {item.isUnidentified && '? '}
                     {item.name}
                   </span>
-                  <span className="text-yellow-700">{item.weight} lbs</span>
+                  <span className="text-yellow-700">{item.weight} slots</span>
                 </div>
               ))}
             </div>
@@ -218,9 +218,9 @@ export const ImportItemsModal = ({ show, onClose, onImport }) => {
         <div className="text-xs text-gray-500 mb-4 p-2 bg-gray-50 rounded">
           <p className="font-medium mb-1">Supported item formats:</p>
           <ul className="list-disc list-inside space-y-0.5">
-            <li><strong>Normal:</strong> {`{ "name": "...", "weight": N, "description": "..." }`}</li>
+            <li><strong>Normal:</strong> {`{ "name": "...", "weight": N, "description": "..." }`} (weight is used as item slots)</li>
             <li><strong>Coins:</strong> {`{ "itemType": "coins", "coins": { "gold": N, ... } }`}</li>
-            <li><strong>Treasure:</strong> {`{ "itemType": "treasure", "name": "...", "goldValue": N, "quantity": N, "weightPerItem": N }`}</li>
+            <li><strong>Treasure:</strong> {`{ "itemType": "treasure", "name": "...", "goldValue": N, "quantity": N, "weightPerItem": N }`} (weightPerItem is slots each)</li>
             <li><strong>Unidentified:</strong> {`{ "name": "...", "isUnidentified": true, "secretName": "...", "secretDescription": "..." }`}</li>
           </ul>
         </div>

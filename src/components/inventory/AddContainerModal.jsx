@@ -29,7 +29,7 @@ export const AddContainerModal = ({ show, onClose, onSubmit }) => {
     const maxCapacityPounds = parseWeightInput(maxCapacityString);
     if (isNaN(weightPounds)) {
       alert(
-        "Invalid weight format. Please enter a number (e.g., '5' or '0.5').",
+        "Invalid container slot format. Please enter a number (usually 0 for containers in use).",
       );
       return;
     }
@@ -40,7 +40,7 @@ export const AddContainerModal = ({ show, onClose, onSubmit }) => {
       setMaxCapacityString("");
     } else {
       alert(
-        "Invalid capacity format. Capacity must be a positive number (e.g., '10' or '5.5').",
+        "Invalid capacity format. Capacity must be a positive number (e.g., '10' or '16').",
       );
     }
   };
@@ -62,14 +62,14 @@ export const AddContainerModal = ({ show, onClose, onSubmit }) => {
           type="text"
           value={containerWeight}
           onChange={(e) => setContainerWeight(e.target.value)}
-          placeholder={`Weight in ${weightUnit.plural} (e.g., '2')`}
+          placeholder={`Container slots in ${weightUnit.plural} (usually 0)`}
           className="w-full p-2 border border-gray-300 rounded-md mb-3 text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
         <input
           type="text"
           value={maxCapacityString}
           onChange={(e) => setMaxCapacityString(e.target.value)}
-          placeholder={`Max Capacity in ${weightUnit.plural}`}
+          placeholder={`Max capacity in ${weightUnit.plural}`}
           className="w-full p-2 border border-gray-300 rounded-md mb-4 text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
         <div className="flex justify-end gap-3">

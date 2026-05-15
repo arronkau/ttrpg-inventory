@@ -67,7 +67,7 @@ export const AddItemInputModal = ({ show, onClose, onSubmit }) => {
         : parseWeightInput(itemWeightString);
 
       if (isNaN(itemWeightPounds)) {
-        alert("Invalid weight format. Please enter a number (e.g., '5' or '0.5').");
+        alert("Invalid slot format. Please enter a number (e.g., '1' or '2').");
         return;
       }
 
@@ -78,7 +78,7 @@ export const AddItemInputModal = ({ show, onClose, onSubmit }) => {
 
       let treasureName = qty > 1 ? `${qty}x ${baseName} (${treasureGoldValue}g)` : `${baseName} (${treasureGoldValue}g)`;
 
-      // Total weight is per-item weight times quantity
+      // Total slots is per-item slots times quantity
       const totalWeight = itemWeightPounds * qty;
 
       onSubmit(treasureName, totalWeight, itemDescription, {
@@ -109,7 +109,7 @@ export const AddItemInputModal = ({ show, onClose, onSubmit }) => {
       resetForm();
     } else {
       alert(
-        "Invalid weight format. Please enter a number (e.g., '5' or '0.5').",
+        "Invalid slot format. Please enter a number (e.g., '1' or '2').",
       );
     }
   };
@@ -224,7 +224,7 @@ export const AddItemInputModal = ({ show, onClose, onSubmit }) => {
               </div>
             </div>
             <p className="text-xs text-gray-500 mt-2">
-              Weight: {calculateCoinWeight({ platinum: parseInt(platinum) || 0, gold: parseInt(gold) || 0, silver: parseInt(silver) || 0, copper: parseInt(copper) || 0 }, coinsPerWeightUnit)} {weightUnit.plural} ({coinsPerWeightUnit} coins = 1 {weightUnit.singular})
+              Slots: {calculateCoinWeight({ platinum: parseInt(platinum) || 0, gold: parseInt(gold) || 0, silver: parseInt(silver) || 0, copper: parseInt(copper) || 0 }, coinsPerWeightUnit)} {weightUnit.plural} ({coinsPerWeightUnit} coins = 1 {weightUnit.singular})
             </p>
           </div>
         )}
@@ -263,7 +263,7 @@ export const AddItemInputModal = ({ show, onClose, onSubmit }) => {
                 />
               </div>
               <div className="flex-1">
-                <label className="block text-xs text-gray-600">Weight (each)</label>
+                <label className="block text-xs text-gray-600">Slots (each)</label>
                 <input
                   type="text"
                   value={itemWeightString}
@@ -308,7 +308,7 @@ export const AddItemInputModal = ({ show, onClose, onSubmit }) => {
               type="text"
               value={itemWeightString}
               onChange={(e) => setItemWeightString(e.target.value)}
-              placeholder={`Weight in ${weightUnit.plural} (e.g., 5 or 0.5)`}
+              placeholder={`Slots in ${weightUnit.plural} (e.g., 1 or 2)`}
               className="w-full p-2 border border-gray-300 rounded-md mb-3 text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
             {!isUnidentified && (
