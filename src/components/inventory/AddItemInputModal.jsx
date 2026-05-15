@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { parseWeightInput } from "../../utils/utils";
 import { calculateCoinWeight, formatCoins } from "../../utils/coins";
 import { usePartyConfig } from "../../contexts/PartyConfigContext";
+import { getEquipmentSuggestions, findEquipmentByName } from "../../utils/equipmentCatalog";
 
 export const AddItemInputModal = ({ show, onClose, onSubmit }) => {
   const { weightUnit, coinsPerWeightUnit } = usePartyConfig();
@@ -11,6 +12,7 @@ export const AddItemInputModal = ({ show, onClose, onSubmit }) => {
   const [isUnidentified, setIsUnidentified] = useState(false);
   const [secretName, setSecretName] = useState("");
   const [secretDescription, setSecretDescription] = useState("");
+  const [showEquipmentSuggestions, setShowEquipmentSuggestions] = useState(false);
 
   // Item type: 'normal', 'coins', or 'treasure'
   const [itemType, setItemType] = useState('normal');
@@ -24,6 +26,25 @@ export const AddItemInputModal = ({ show, onClose, onSubmit }) => {
   // Treasure gold value and quantity
   const [treasureValue, setTreasureValue] = useState(0);
   const [treasureQuantity, setTreasureQuantity] = useState(1);
+
+  const applyEquipmentSuggestion = (equipment) => {
+    if (!equipment) return;
+    setItemName(equipment.name);
+    setItemWeightString(String(equipment.slots));
+    setItemDescription(equipment.description || "");
+    setShowEquipmentSuggestions(false);
+  };
+
+  const handleNormalItemNameChange = (value) => {
+    setItemName(value);
+    setShowEquipmentSuggestions(true);
+    const exactMatch = findEquipmentByName(value);
+    if (exactMatch) applyEquipmentSuggestion(exactMatch);
+  };
+
+  const equipmentSuggestions = itemType === 'normal' && !isUnidentified
+    ? getEquipmentSuggestions(itemName)
+    : [];
 
   // Close on escape key
   useEffect(() => {
@@ -122,6 +143,7 @@ export const AddItemInputModal = ({ show, onClose, onSubmit }) => {
     setSecretName("");
     setSecretDescription("");
     setItemType('normal');
+    setShowEquipmentSuggestions(false);
     setPlatinum(0);
     setGold(0);
     setSilver(0);
@@ -297,13 +319,40 @@ export const AddItemInputModal = ({ show, onClose, onSubmit }) => {
               <span className="text-gray-700 font-medium">Unidentified Item</span>
             </label>
 
-            <input
-              type="text"
-              value={itemName}
-              onChange={(e) => setItemName(e.target.value)}
-              placeholder={isUnidentified ? "Unidentified Name (e.g., 'Strange Ring')" : "Item Name"}
-              className="w-full p-2 border border-gray-300 rounded-md mb-3 text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
+            <div className="relative mb-3">
+              <input
+                type="text"
+                value={itemName}
+                onChange={(e) => isUnidentified ? setItemName(e.target.value) : handleNormalItemNameChange(e.target.value)}
+                onFocus={() => setShowEquipmentSuggestions(true)}
+                onBlur={() => setTimeout(() => setShowEquipmentSuggestions(false), 150)}
+                placeholder={isUnidentified ? "Unidentified Name (e.g., 'Strange Ring')" : "Item Name"}
+                className="w-full p-2 border border-gray-300 rounded-md text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              {!isUnidentified && showEquipmentSuggestions && equipmentSuggestions.length > 0 && (
+                <div className="absolute z-50 mt-1 w-full bg-white border border-gray-300 rounded-md shadow-lg max-h-56 overflow-y-auto">
+                  {equipmentSuggestions.map((equipment) => (
+                    <button
+                      type="button"
+                      key={equipment.name}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        applyEquipmentSuggestion(equipment);
+                      }}
+                      className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0"
+                    >
+                      <div className="flex justify-between gap-3 text-sm">
+                        <span className="font-medium text-gray-900">{equipment.name}</span>
+                        <span className="text-gray-500 shrink-0">{equipment.slots} slots</span>
+                      </div>
+                      {equipment.description && (
+                        <div className="text-xs text-gray-500 truncate">{equipment.description}</div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             <input
               type="text"
               value={itemWeightString}

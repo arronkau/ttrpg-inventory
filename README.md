@@ -1,19 +1,19 @@
 # ttrpg-inventory
 
-A shared, real-time inventory manager for tabletop RPG parties. Track characters, containers, items, and coins across the whole party — everyone sees updates immediately.
+A shared, real-time inventory manager for tabletop RPG parties. Track characters, storage, containers, items, and coins across the whole party — everyone sees updates immediately.
 
 Built with React + Vite + Tailwind, with Firebase (Firestore + anonymous auth) for sync.
 
 ## Features
 
 - **Per-party shared inventory** — every party has a unique URL; share it with the table
-- **Characters and containers** — each character holds containers (backpack, mule, chest, etc.); containers hold items
-- **Coins, treasure, and counted items** — platinum / gold / silver / copper, named treasure, and simple count controls for items named like `Torch (3)`
+- **Characters, storage, and containers** — characters carry containers; storage entries track party inventory that is not being carried
+- **Coins, treasure, counted items, and equipment suggestions** — platinum / gold / silver / copper, named treasure, count controls for items named like `Torch (3)`, and autocomplete for standard adventuring gear
 - **Item-based encumbrance** — speed is calculated from equipped slots, packed slots, and each character’s STR modifier
 - **Audit log** — see edits, deletes, and cross-character moves; coin edits include the amount changed
 - **Backup and restore** — export or import the full party and audit log as JSON from Settings
-- **Drag-and-drop item movement** — reorder items within a container, move them between containers, or move them between characters
-- **Bulk transfer** — move all of one character's items to another in one click
+- **Drag-and-drop item movement** — reorder items within a container, move them between containers, characters, and storage
+- **Bulk transfer** — move all items from one container to another in one click
 - **Import items** — paste a list of items to add at once
 - **Real-time sync** — Firestore `onSnapshot` keeps every connected client in lockstep
 - **Anonymous auth** — no signup, just open the link
@@ -80,8 +80,9 @@ The Firestore layout looks like:
 
 ```
 artifacts/{appId}/public/data/dnd_inventory/{partyId}/
-├── characters/{characterId}                          -- one doc per character
-│   ├── name, order, strengthModifier
+├── characters/{characterId}                          -- one doc per character or storage entry
+│   ├── characters: name, order, strengthModifier
+│   ├── storage: name, order, isStorage, storageLimit
 │   └── containers: [{ id, name, weight, maxCapacity, items: [...] }]
 └── metadata/party-data/entries/{entryId}             -- one doc per audit log entry
     └── action, description, timestamp                -- ISO string, queried desc
@@ -89,9 +90,13 @@ artifacts/{appId}/public/data/dnd_inventory/{partyId}/
 
 A "party" is just a UUID in the URL (`/abcd-1234-...`). New visitors are redirected to either their last visited party (from `localStorage`) or a freshly generated UUID. Share a party URL to share its inventory.
 
+### Storage
+
+Use **Add New Storage** for party inventory that is not being carried by a character, such as `The Bank` or `The Hole next to the Oak Tree`. Storage entries appear after characters and use an amber outline. A storage entry has a name and an optional slot limit; `0` means infinite. If a slot limit is set, the storage header shows the current slots against that limit, such as `2/10 slots`. Storage entries support adding items, JSON import, drag-and-drop, item details transfer, and transfer-all.
+
 ### Item movement
 
-Use the grab handle on the left side of an item to drag it into a new order, into another container, or onto another character's container. Drop an item on a container title to put it at the top of that container, including when the container is collapsed. Dropping coins into a container that already has coins merges them. The audit log records item moves only when the item changes characters, not when it moves between containers on the same character.
+Use the grab handle on the left side of an item to drag it into a new order, into another container, or onto a character's or storage entry's container. Drop an item on a container title to put it at the top of that container, including when the container is collapsed. Dropping coins into a container that already has coins merges them. The audit log records item moves only when the item changes owner, not when it moves between containers on the same character or storage entry.
 
 ### Counted items
 
@@ -99,7 +104,7 @@ Any normal item whose name ends in a plain number in parentheses, such as `Torch
 
 ### Backup and restore
 
-Open Settings to export a JSON backup containing the party settings, all characters, their containers and items, and the audit log. Importing a backup JSON file replaces the current party data with the contents of that file.
+Open Settings to export a JSON backup containing the party settings, all characters, storage entries, containers, items, and the audit log. Importing a backup JSON file replaces the current party data with the contents of that file.
 
 ### Item-based encumbrance
 

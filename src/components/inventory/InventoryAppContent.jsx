@@ -21,6 +21,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { AddContainerModal } from "./AddContainerModal";
 import { AddItemInputModal } from "./AddItemInputModal";
 import { CharacterDetailsModal } from "./CharacterDetailsModal";
+import { AddStorageModal, StorageDetailsModal } from "./StorageDetailsModal";
 import { ContainerDetailsModal } from "./ContainerDetailsModal";
 import { DeleteConfirmationModal } from "./DeleteConfirmationModal";
 import { GenericInputModal, Modal } from "./Modal";
@@ -33,9 +34,12 @@ import { PartyConfigModal } from "./PartyConfigModal";
 import { calculateContainerWeight, formatWeight, formatWeightValue } from "../../utils/utils";
 import {
   calculateCharacterEncumbrance,
+  calculateStorageSlots,
+  createStorageContainer,
   isProgrammaticEquippedContainer,
   isSingleItemEquippedContainer,
-  normalizeCharacterForEquippedSections,
+  isStorageEntity,
+  normalizeInventoryEntity,
   normalizeContainersForEquippedSections,
   sanitizeDefaultContainers,
   splitEquippedAndStowedContainers,
@@ -160,10 +164,14 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
     useState(false);
   const [selectedCharacterForDetails, setSelectedCharacterForDetails] =
     useState(null);
+  const [showAddStorageModal, setShowAddStorageModal] = useState(false);
+  const [showStorageDetailsModal, setShowStorageDetailsModal] = useState(false);
+  const [selectedStorageForDetails, setSelectedStorageForDetails] = useState(null);
 
   const [collapsedCharacters, setCollapsedCharacters] = useState({});
   const [collapsedContainers, setCollapsedContainers] = useState({});
   const [highestOrder, setHighestOrder] = useState(0);
+  const [highestStorageOrder, setHighestStorageOrder] = useState(0);
 
   const [showAuditLogModal, setShowAuditLogModal] = useState(false);
   const [auditLog, setAuditLog] = useState([]);
@@ -201,7 +209,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
   );
 
   const normalizeCharacterData = useCallback((data) => (
-    normalizeCharacterForEquippedSections(data).character
+    normalizeInventoryEntity(data).entity
   ), []);
 
   const getSingleItemContainerError = useCallback((container, incomingItemCount = 1, replacingItemId = null) => {
@@ -228,7 +236,8 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
       if (showModal || showGenericInputModal || showAddItemModal ||
           showDeleteCharacterConfirmModal || showAddContainerModal ||
           showItemDetailsModal || showContainerDetailsModal ||
-          showCharacterDetailsModal || showAuditLogModal || showTransferAllModal ||
+          showCharacterDetailsModal || showAddStorageModal || showStorageDetailsModal ||
+          showAuditLogModal || showTransferAllModal ||
           showImportItemsModal || showHelpModal || showPartyConfigModal) {
         return;
       }
@@ -282,7 +291,8 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
   }, [characters, collapsedCharacters, collapsedContainers, showModal,
       showGenericInputModal, showAddItemModal, showDeleteCharacterConfirmModal,
       showAddContainerModal, showItemDetailsModal, showContainerDetailsModal,
-      showCharacterDetailsModal, showAuditLogModal, showTransferAllModal,
+      showCharacterDetailsModal, showAddStorageModal, showStorageDetailsModal,
+      showAuditLogModal, showTransferAllModal,
       showImportItemsModal, showHelpModal, showPartyConfigModal]);
 
   useEffect(() => {
@@ -372,29 +382,39 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
           const fetchedCharacters = snapshot.docs
             .map((docSnap, i) => {
               const data = docSnap.data();
-              const { character, changed } = normalizeCharacterForEquippedSections({
+              const { entity, changed } = normalizeInventoryEntity({
                 id: docSnap.id,
                 ...data,
                 order: data.order !== undefined ? data.order : i,
               });
               if (changed) {
+                const { id: _ignoredId, ...entityDocData } = entity;
                 characterUpdates.push(
-                  updateDoc(docSnap.ref, { containers: character.containers }),
+                  updateDoc(docSnap.ref, entityDocData),
                 );
               }
-              return character;
+              return entity;
             })
-            .sort((a, b) => (a.order || 0) - (b.order || 0));
+            .sort((a, b) => {
+              if (isStorageEntity(a) !== isStorageEntity(b)) {
+                return isStorageEntity(a) ? 1 : -1;
+              }
+              return (a.order || 0) - (b.order || 0);
+            });
           if (characterUpdates.length > 0) {
             Promise.all(characterUpdates).catch((error) => {
-              console.error("Error normalizing equipped containers:", error);
+              console.error("Error normalizing inventory entities:", error);
             });
           }
           setCharacters(fetchedCharacters);
-          const maxOrder = fetchedCharacters.length > 0 
-            ? Math.max(...fetchedCharacters.map(c => c.order || 0))
-            : 0;
-          setHighestOrder(maxOrder);
+          const characterOnly = fetchedCharacters.filter((entity) => !isStorageEntity(entity));
+          const storageOnly = fetchedCharacters.filter(isStorageEntity);
+          setHighestOrder(characterOnly.length > 0
+            ? Math.max(...characterOnly.map(c => c.order || 0))
+            : 0);
+          setHighestStorageOrder(storageOnly.length > 0
+            ? Math.max(...storageOnly.map(c => c.order || 0))
+            : 0);
         },
         (error) => {
           console.error("Error fetching characters:", error);
@@ -494,10 +514,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
       exportedAt: new Date().toISOString(),
       partyId,
       partyConfig,
-      characters: characters.map((character) => ({
-        ...character,
-        containers: normalizeContainersForEquippedSections(character.containers || []).containers,
-      })),
+      characters: characters.map((character) => normalizeInventoryEntity(character).entity),
       auditLog: auditLog.map((entry) => ({ ...entry })),
     };
 
@@ -561,11 +578,11 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
     backup.characters.forEach((rawCharacter, index) => {
       const { id, ...characterData } = rawCharacter || {};
       const characterId = id || generateId();
-      const normalizedCharacter = normalizeCharacterForEquippedSections({
+      const normalizedEntity = normalizeInventoryEntity({
         ...characterData,
         order: characterData.order !== undefined ? characterData.order : index,
-      }).character;
-      const { id: _ignoredId, ...docData } = normalizedCharacter;
+      }).entity;
+      const { id: _ignoredId, ...docData } = normalizedEntity;
       operations.push((batch) => batch.set(doc(charactersRef, characterId), docData));
     });
 
@@ -580,7 +597,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
     });
 
     await commitBatchChunks(operations);
-    setModalContent('Backup restored. Characters, containers, items, settings, and audit log have been replaced.');
+    setModalContent('Backup restored. Characters, storage, containers, items, settings, and audit log have been replaced.');
     setShowModal(true);
   }, [db, appId, partyId, commitBatchChunks]);
 
@@ -732,6 +749,47 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
     await updateDoc(characterRef, { order: highestOrder + 1 });
   };
 
+  const handleSendStorageToBottom = async (storageId) => {
+    const storageRef = doc(
+      db,
+      `artifacts/${appId}/public/data/dnd_inventory/${partyId}/characters`,
+      storageId,
+    );
+
+    await updateDoc(storageRef, { order: highestStorageOrder + 1 });
+  };
+
+  const handleAddStorageSubmit = async (storageName, storageLimit = 0) => {
+    if (!db || !userId || !partyId) {
+      setModalContent(
+        "Database not ready, user not authenticated, or no party selected.",
+      );
+      setShowModal(true);
+      return;
+    }
+
+    try {
+      await addDoc(
+        collection(
+          db,
+          `artifacts/${appId}/public/data/dnd_inventory/${partyId}/characters`,
+        ),
+        {
+          name: storageName,
+          isStorage: true,
+          storageLimit: Math.max(0, Number(storageLimit || 0)),
+          order: highestStorageOrder + 1,
+          containers: [createStorageContainer([], generateId())],
+        },
+      );
+      await addAuditLogEntry('created', `storage "${storageName}"`);
+    } catch (error) {
+      console.error("Error adding storage:", error);
+      setModalContent(`Error adding storage: ${error.message}`);
+      setShowModal(true);
+    }
+  };
+
   const handleAddCharacterClick = () => {
     if (!db || !userId || !partyId) {
       setModalContent(
@@ -762,6 +820,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
             const newCharacter = {
               name: characterName,
               strengthModifier: 0,
+              order: highestOrder + 1,
               containers,
             };
             await addDoc(
@@ -954,7 +1013,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
     }
   };
 
-  const handleDeleteCharacterConfirmation = (characterId, characterName) => {
+  const handleDeleteCharacterConfirmation = (characterId, characterName, isStorage = false) => {
     if (!db || !userId || !partyId) {
       setModalContent(
         "Database not ready, user not authenticated, or no party selected.",
@@ -962,19 +1021,20 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
       setShowModal(true);
       return;
     }
-    setCharacterToDelete({ id: characterId, name: characterName });
+    setCharacterToDelete({ id: characterId, name: characterName, isStorage });
     setShowDeleteCharacterConfirmModal(true);
   };
 
   const deleteCharacter = async () => {
     if (!db || !userId || !partyId || !characterToDelete) {
-      setModalContent("Error: Cannot delete character. Data missing.");
+      setModalContent("Error: Cannot delete entry. Data missing.");
       setShowModal(true);
       return;
     }
 
     try {
-      const characterName = characterToDelete.name;
+      const entityName = characterToDelete.name;
+      const entityType = characterToDelete.isStorage ? 'storage' : 'character';
       await deleteDoc(
         doc(
           db,
@@ -983,17 +1043,16 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
         ),
       );
 
-      // Log the character deletion
       await addAuditLogEntry(
         'deleted',
-        `character "${characterName}"`
+        `${entityType} "${entityName}"`
       );
 
       setShowDeleteCharacterConfirmModal(false);
       setCharacterToDelete(null);
     } catch (error) {
-      console.error("Error deleting character:", error);
-      setModalContent(`Error deleting character: ${error.message}`);
+      console.error("Error deleting entry:", error);
+      setModalContent(`Error deleting entry: ${error.message}`);
       setShowModal(true);
     }
   };
@@ -1100,6 +1159,39 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
       } finally {
         setShowCharacterDetailsModal(false);
         setSelectedCharacterForDetails(null);
+      }
+    },
+    [db, userId, appId, partyId],
+  );
+
+  const handleSaveStorageDetails = useCallback(
+    async (storageId, newName, newStorageLimit = 0) => {
+      if (!db || !userId || !partyId) {
+        setModalContent(
+          "Error: Cannot save storage details. Database not ready or user not authenticated.",
+        );
+        setShowModal(true);
+        return;
+      }
+
+      try {
+        const storageRef = doc(
+          db,
+          `artifacts/${appId}/public/data/dnd_inventory/${partyId}/characters`,
+          storageId,
+        );
+        await updateDoc(storageRef, {
+          name: newName,
+          storageLimit: Math.max(0, Number(newStorageLimit || 0)),
+          isStorage: true,
+        });
+      } catch (error) {
+        console.error("Error saving storage details:", error);
+        setModalContent(`Error saving storage details: ${error.message}`);
+        setShowModal(true);
+      } finally {
+        setShowStorageDetailsModal(false);
+        setSelectedStorageForDetails(null);
       }
     },
     [db, userId, appId, partyId],
@@ -2568,11 +2660,18 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
   );
 
   const renderContainerCard = (char, container, options = {}) => {
-    const { allowCollapse = true, title = container.name, allowDetails = !isProgrammaticEquippedContainer(container) } = options;
+    const {
+      allowCollapse = true,
+      title = container.name,
+      allowDetails = !isProgrammaticEquippedContainer(container),
+      hideCapacity = false,
+      showTransferAllButton = false,
+    } = options;
     const currentContainerWeight = calculateContainerWeight(container);
     const isProgrammaticEquipped = isProgrammaticEquippedContainer(container);
     const isSingleItemEquipped = isSingleItemEquippedContainer(container);
     const isOverCapacity =
+      !hideCapacity &&
       !isProgrammaticEquipped &&
       container.maxCapacity !== undefined &&
       currentContainerWeight > container.maxCapacity;
@@ -2636,7 +2735,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
             <span className="mr-2 w-3" aria-hidden="true" />
           )}
           <span className="flex-grow">{title}</span>
-          {!isSingleItemEquipped && !isProgrammaticEquipped && (
+          {!hideCapacity && !isSingleItemEquipped && !isProgrammaticEquipped && (
             <span className="text-yellow-200 ml-auto text-sm font-medium">
               {`${formatWeightValue(currentContainerWeight)} / ${formatPartyWeight(container.maxCapacity)}`}
             </span>
@@ -2795,10 +2894,183 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
                 >
                   {"{ }"}
                 </button>
+                {showTransferAllButton && containerItems.length > 0 && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setTransferAllSource({
+                        charId: char.id,
+                        containerId: container.id,
+                        containerName: container.name,
+                      });
+                      setShowTransferAllModal(true);
+                    }}
+                    className="bg-orange-600 hover:bg-orange-700 text-white font-bold py-1 px-2 rounded-lg text-sm shadow transform transition duration-300 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-opacity-50"
+                    title="Transfer all items"
+                  >
+                    ↔
+                  </button>
+                )}
               </div>
             )}
           </>
         )}
+      </div>
+    );
+  };
+
+  const renderCharacterCard = (char) => {
+    const encumbrance = calculateCharacterEncumbrance(char);
+    const isOverloaded = encumbrance.speed === 'Overloaded';
+
+    return (
+      <div
+        key={char.id}
+        className={`bg-gray-800 rounded-xl shadow-lg p-3 border-2 flex flex-col transition-all duration-300 hover:shadow-xl ${isOverloaded ? 'border-red-500 hover:border-red-400' : 'border-blue-600 hover:border-blue-500'}`}
+        onClick={() => {
+          setSelectedCharacterForDetails(char);
+          setShowCharacterDetailsModal(true);
+        }}
+      >
+        <div className="flex justify-between items-center mb-2 border-b border-blue-700 pb-1">
+          <h2 className="text-xl font-bold text-blue-300 flex text-left">
+            {!Object.prototype.hasOwnProperty.call(collapsedCharacters, char.id) || collapsedCharacters[char.id] ? (
+              <button
+                className="bg-transparent p-0 border-none mr-3 items-center focus-visible:outline-0 focus:outline-0 text-red-500"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleExpandCharacter(char.id);
+                }}
+              >
+                &gt;
+              </button>
+            ) : (
+              <button
+                className="bg-transparent p-0 border-none mr-3 items-center focus-visible:outline-0 focus:outline-0 text-red-500"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleCollapseCharacter(char.id);
+                }}
+              >
+                v
+              </button>
+            )}
+            {char.name}
+          </h2>
+          <span className={`${isOverloaded ? 'text-red-300' : 'text-yellow-200'} text-sm sm:text-base float-right text-right font-semibold`}>
+            {encumbrance.speed}
+          </span>
+        </div>
+
+        {!Object.prototype.hasOwnProperty.call(collapsedCharacters, char.id) || collapsedCharacters[char.id] ? (
+          <></>
+        ) : (
+          <div className="flex flex-col gap-2 flex-grow">
+            {(() => {
+              const { equippedContainers, stowedContainers } = splitEquippedAndStowedContainers(char.containers || []);
+
+              return (
+                <>
+                  {renderSectionHeader('Equipped', encumbrance.equippedSpeed, encumbrance.equipped)}
+                  {equippedContainers.map((container) => renderContainerCard(char, container, {
+                    allowCollapse: false,
+                    allowDetails: false,
+                  }))}
+                  {renderSectionHeader('Stowed', encumbrance.stowedSpeed, encumbrance.packed)}
+                  {stowedContainers.map((container) => renderContainerCard(char, container))}
+                </>
+              );
+            })()}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleAddContainerClick(char.id);
+              }}
+              className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-1 px-2 rounded-lg text-sm shadow transform transition duration-300 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-opacity-50 mt-1"
+            >
+              + Add Container
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderStorageCard = (storage) => {
+    const slots = calculateStorageSlots(storage);
+    const storageLimit = Number(storage.storageLimit || 0);
+    const isOverLimit = storageLimit > 0 && slots > storageLimit;
+
+    return (
+      <div
+        key={storage.id}
+        className={`bg-gray-800 rounded-xl shadow-lg p-3 border-2 flex flex-col transition-all duration-300 hover:shadow-xl ${isOverLimit ? 'border-red-500 hover:border-red-400' : 'border-amber-600 hover:border-amber-500'}`}
+        onClick={() => {
+          setSelectedStorageForDetails(storage);
+          setShowStorageDetailsModal(true);
+        }}
+      >
+        <div className="flex justify-between items-center mb-2 border-b border-amber-700 pb-1">
+          <h2 className="text-xl font-bold text-amber-300 flex text-left">
+            {!Object.prototype.hasOwnProperty.call(collapsedCharacters, storage.id) || collapsedCharacters[storage.id] ? (
+              <button
+                className="bg-transparent p-0 border-none mr-3 items-center focus-visible:outline-0 focus:outline-0 text-red-500"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleExpandCharacter(storage.id);
+                }}
+              >
+                &gt;
+              </button>
+            ) : (
+              <button
+                className="bg-transparent p-0 border-none mr-3 items-center focus-visible:outline-0 focus:outline-0 text-red-500"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleCollapseCharacter(storage.id);
+                }}
+              >
+                v
+              </button>
+            )}
+            {storage.name}
+          </h2>
+          <span className={`${isOverLimit ? 'text-red-300' : 'text-yellow-200'} text-sm sm:text-base float-right text-right font-semibold shrink-0`}>
+            {storageLimit > 0
+              ? `${formatWeightValue(slots)}/${formatWeightValue(storageLimit)} slots`
+              : `${formatWeightValue(slots)} slots`}
+          </span>
+        </div>
+
+        {!Object.prototype.hasOwnProperty.call(collapsedCharacters, storage.id) || collapsedCharacters[storage.id] ? (
+          <></>
+        ) : (
+          <div className="flex flex-col gap-2 flex-grow">
+            {(storage.containers || []).map((container) => renderContainerCard(storage, container, {
+              allowDetails: false,
+              hideCapacity: true,
+              showTransferAllButton: true,
+            }))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderEntityColumns = (entities, renderCard, keyPrefix) => {
+    const cols = Math.max(1, Math.min(columnCount, entities.length));
+    const perCol = Math.ceil(entities.length / cols);
+
+    return (
+      <div className="flex gap-6 items-start">
+        {Array.from({ length: cols }, (_, colIndex) => {
+          const colEntities = entities.slice(colIndex * perCol, (colIndex + 1) * perCol);
+          return (
+            <div key={`${keyPrefix}-${colIndex}`} className="flex-1 flex flex-col gap-4 min-w-0">
+              {colEntities.map(renderCard)}
+            </div>
+          );
+        })}
       </div>
     );
   };
@@ -2860,6 +3132,11 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
         show={showAddItemModal}
         onClose={() => setShowAddItemModal(false)}
         onSubmit={handleAddItemSubmit}
+      />
+      <AddStorageModal
+        show={showAddStorageModal}
+        onClose={() => setShowAddStorageModal(false)}
+        onSubmit={handleAddStorageSubmit}
       />
       <DeleteConfirmationModal
         show={showDeleteCharacterConfirmModal}
@@ -3008,6 +3285,19 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
           }
         />
       )}
+      {selectedStorageForDetails && (
+        <StorageDetailsModal
+          show={showStorageDetailsModal}
+          onClose={() => {
+            setShowStorageDetailsModal(false);
+            setSelectedStorageForDetails(null);
+          }}
+          storage={selectedStorageForDetails}
+          onSaveStorage={handleSaveStorageDetails}
+          onDeleteStorage={(id, name) => handleDeleteCharacterConfirmation(id, name, true)}
+          onSendStorageToBottom={handleSendStorageToBottom}
+        />
+      )}
       <AuditLogModal
         show={showAuditLogModal}
         onClose={() => setShowAuditLogModal(false)}
@@ -3046,12 +3336,18 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
       />
 
       <div className="flex flex-col items-center mb-8">
-        <div className="flex gap-4">
+        <div className="flex flex-wrap justify-center gap-4">
           <button
             onClick={handleAddCharacterClick}
             className="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg transform transition duration-300 hover:scale-105 focus:outline-none focus:ring-4 focus:ring-green-500 focus:ring-opacity-50"
           >
             + Add New Character
+          </button>
+          <button
+            onClick={() => setShowAddStorageModal(true)}
+            className="bg-amber-600 hover:bg-amber-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg transform transition duration-300 hover:scale-105 focus:outline-none focus:ring-4 focus:ring-amber-500 focus:ring-opacity-50"
+          >
+            + Add New Storage
           </button>
           <button
             onClick={() => setShowAuditLogModal(true)}
@@ -3071,97 +3367,29 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
       <div>
         {characters.length === 0 ? (
           <p className="text-center text-gray-400 text-xl">
-            No characters yet. Add one to get started!
+            No characters or storage yet. Add one to get started.
           </p>
         ) : (
-          <div className="flex gap-6 items-start">
-            {Array.from({ length: columnCount }, (_, colIndex) => {
-              const perCol = Math.ceil(characters.length / columnCount);
-              const colChars = characters.slice(colIndex * perCol, (colIndex + 1) * perCol);
-              return (
-              <div key={colIndex} className="flex-1 flex flex-col gap-4 min-w-0">
-                {colChars.map((char) => (
-            <div
-              key={char.id}
-              className={`bg-gray-800 rounded-xl shadow-lg p-3 border-2 flex flex-col transition-all duration-300 hover:shadow-xl ${calculateCharacterEncumbrance(char).speed === 'Overloaded' ? 'border-red-500 hover:border-red-400' : 'border-blue-600 hover:border-blue-500'}`}
-              onClick={() => {
-                setSelectedCharacterForDetails(char);
-                setShowCharacterDetailsModal(true);
-              }}
-            >
-              <div className="flex justify-between items-center mb-2 border-b border-blue-700 pb-1">
-                <h2 className="text-xl font-bold text-blue-300 flex text-left">
-                  {!Object.prototype.hasOwnProperty.call(collapsedCharacters, char.id) || collapsedCharacters[char.id] ? (
-                    <button
-                      className="bg-transparent p-0 border-none mr-3 items-center focus-visible:outline-0 focus:outline-0 text-red-500"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleExpandCharacter(char.id);
-                      }}
-                    >
-                      &gt;
-                    </button>
-                  ) : (
-                    <button
-                      className="bg-transparent p-0 border-none mr-3 items-center focus-visible:outline-0 focus:outline-0 text-red-500"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleCollapseCharacter(char.id);
-                      }}
-                    >
-                      v
-                    </button>
-                  )}
-                  {char.name}
-                </h2>
-                {(() => {
-                  const encumbrance = calculateCharacterEncumbrance(char);
-                  const overloaded = encumbrance.speed === 'Overloaded';
-                  return (
-                    <span className={`${overloaded ? 'text-red-300' : 'text-yellow-200'} text-sm sm:text-base float-right text-right font-semibold`}>
-                      {encumbrance.speed}
-                    </span>
-                  );
-                })()}
-              </div>
+          (() => {
+            const characterEntities = characters.filter((entity) => !isStorageEntity(entity));
+            const storageEntities = characters.filter(isStorageEntity);
 
-              {!Object.prototype.hasOwnProperty.call(collapsedCharacters, char.id) || collapsedCharacters[char.id] ? (
-                <></>
-              ) : (
-                <div className="flex flex-col gap-2 flex-grow">
-                  {(() => {
-                    const encumbrance = calculateCharacterEncumbrance(char);
-                    const { equippedContainers, stowedContainers } = splitEquippedAndStowedContainers(char.containers || []);
-
-                    return (
-                      <>
-                        {renderSectionHeader('Equipped', encumbrance.equippedSpeed, encumbrance.equipped)}
-                        {equippedContainers.map((container) => renderContainerCard(char, container, {
-                          allowCollapse: false,
-                          allowDetails: false,
-                        }))}
-                        {renderSectionHeader('Stowed', encumbrance.stowedSpeed, encumbrance.packed)}
-                        {stowedContainers.map((container) => renderContainerCard(char, container))}
-                      </>
-                    );
-                  })()}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleAddContainerClick(char.id);
-                    }}
-                    className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-1 px-2 rounded-lg text-sm shadow transform transition duration-300 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-opacity-50 mt-1"
-                  >
-                    + Add Container
-                  </button>
-                </div>
-              )}
-            </div>
-          ))}
+            return (
+              <div className="space-y-8">
+                {characterEntities.length > 0 && renderEntityColumns(characterEntities, renderCharacterCard, 'characters')}
+                {storageEntities.length > 0 && (
+                  <div className="space-y-3">
+                    {characterEntities.length > 0 && (
+                      <h2 className="text-lg font-bold text-amber-300 border-b border-amber-700 pb-1">
+                        Storage
+                      </h2>
+                    )}
+                    {renderEntityColumns(storageEntities, renderStorageCard, 'storage')}
+                  </div>
+                )}
               </div>
-              );
-            })}
-          </div>
+            );
+          })()
         )}
       </div>
 

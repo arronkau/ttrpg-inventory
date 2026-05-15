@@ -62,11 +62,11 @@ export const HelpModal = ({ show, onClose }) => {
             <h4 className="font-semibold text-gray-900 mb-1">Moving items</h4>
             <p>
               Drag an item by the grab handle on its left side to reorder it,
-              move it into another container, or move it to another character.
+              move it into another container, or move it to another character or storage entry.
               Drop an item on a container title to put it at the top of that container,
               including when the container is collapsed. Dropping coins into a container
               that already has coins will merge them. Moves are recorded in the audit log only
-              when an item moves from one character to another.
+              when an item moves from one owner to another.
             </p>
           </section>
 
@@ -77,6 +77,16 @@ export const HelpModal = ({ show, onClose }) => {
               <span className="font-mono">Iron Spike (12)</span> get small − and + controls
               on the item row. The controls change the number in the item name; they do not
               automatically change the item&apos;s slot value.
+            </p>
+          </section>
+
+
+          <section>
+            <h4 className="font-semibold text-gray-900 mb-1">Equipment suggestions</h4>
+            <p>
+              When adding or editing a normal item, type in the item name field to see matching
+              adventuring gear. Selecting a suggestion fills the item name, slot value, and
+              description.
             </p>
           </section>
 
@@ -95,10 +105,22 @@ export const HelpModal = ({ show, onClose }) => {
             </p>
           </section>
 
+
+
+          <section>
+            <h4 className="font-semibold text-gray-900 mb-1">Storage</h4>
+            <p>
+              Use Add New Storage for party inventory that is not being carried by a character,
+              such as a bank, cache, or buried stash. Storage entries have a name and an optional
+              slot limit; 0 means infinite. Storage appears after characters, uses an amber outline,
+              and supports adding items, JSON import, drag-and-drop, item transfer, and transfer all.
+            </p>
+          </section>
+
           <section>
             <h4 className="font-semibold text-gray-900 mb-1">Backup and restore</h4>
             <p>
-              Open Settings to export the full party as JSON, including characters, containers,
+              Open Settings to export the full party as JSON, including characters, storage, containers,
               items, party settings, and audit log entries. Importing a backup JSON file replaces the
               current party data.
             </p>

@@ -40,7 +40,7 @@ export const TransferAllItemsModal = ({ show, onClose, onConfirm, characters, so
 
         <div className="mb-4">
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            Target Character
+            Target Character / Storage
           </label>
           <select
             value={targetCharId}
@@ -50,10 +50,10 @@ export const TransferAllItemsModal = ({ show, onClose, onConfirm, characters, so
             }}
             className="w-full p-2 border border-gray-300 rounded-md text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
-            <option value="">Select a character...</option>
+            <option value="">Select character or storage...</option>
             {characters.map(char => (
               <option key={char.id} value={char.id}>
-                {char.name}
+                {char.name}{char.isStorage ? ' (storage)' : ''}
               </option>
             ))}
           </select>

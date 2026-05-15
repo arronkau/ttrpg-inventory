@@ -1,0 +1,446 @@
+{
+  "schema_version": "1.0",
+  "source": "OSE CC3 Expanded Equipment, Adventuring Gear only; OSE SRD Adventuring Gear",
+  "slot_rules": {
+    "0": "Unencumbering: very small or very light objects.",
+    "1": "Can generally be carried in one hand.",
+    "2": "Requires two hands to carry/use or is moderately bulky.",
+    "3_plus": "Large, heavy, or awkward objects; estimated from likely bulk/weight where exact weights were not provided."
+  },
+  "items": [
+    {
+      "name": "Backpack",
+      "type": "equipment",
+      "slots": 1,
+      "price_gp": 5,
+      "description": "A leather bag that can be strapped over the shoulders, requiring no hands. Holds up to 400 coins."
+    },
+    {
+      "name": "Barrel",
+      "type": "equipment",
+      "slots": 6,
+      "price_gp": 1,
+      "description": "A wooden barrel that holds 40 gallons (320 pints) of liquid."
+    },
+    {
+      "name": "Bedroll",
+      "type": "equipment",
+      "slots": 1,
+      "price_gp": 2,
+      "description": "A heavy woollen blanket with a small pillow."
+    },
+    {
+      "name": "Bell (miniature)",
+      "type": "equipment",
+      "slots": 0,
+      "price_gp": 1,
+      "description": "A 1-inch brass bell."
+    },
+    {
+      "name": "Belt pouch",
+      "type": "equipment",
+      "slots": 0,
+      "price_gp": 1,
+      "description": "A leather pouch that holds up to 100 coins."
+    },
+    {
+      "name": "Block and tackle",
+      "type": "equipment",
+      "slots": 1,
+      "price_gp": 5,
+      "description": "Used for hauling or lifting heavy objects. Reduces the effective weight by 75%. Requires 4 times as much rope."
+    },
+    {
+      "name": "Box (iron, large)",
+      "type": "equipment",
+      "slots": 4,
+      "price_gp": 30,
+      "description": "A solid iron casket. A large box can hold up to 800 coins."
+    },
+    {
+      "name": "Box (iron, small)",
+      "type": "equipment",
+      "slots": 2,
+      "price_gp": 10,
+      "description": "A solid iron casket. A small box can hold up to 250 coins."
+    },
+    {
+      "name": "Bucket",
+      "type": "equipment",
+      "slots": 1,
+      "price_gp": 1,
+      "description": "Holds 5 gallons (40 pints)."
+    },
+    {
+      "name": "Caltrops (20)",
+      "type": "equipment",
+      "slots": 1,
+      "price_gp": 1,
+      "description": "Small metal spikes sufficient to cover a 5-foot by 5-foot area. Creatures moving through the area have a 2-in-6 chance of treading on a spike. Victims suffer a 50% reduction of movement rate for 24 hours, or until they receive magical healing."
+    },
+    {
+      "name": "Candles (10)",
+      "type": "equipment",
+      "slots": 1,
+      "price_gp": 1,
+      "description": "Each candle casts dim light in a 5-foot radius and burns for 1 hour."
+    },
+    {
+      "name": "Chain (10')",
+      "type": "equipment",
+      "slots": 2,
+      "price_gp": 30,
+      "description": "A 10-foot length of heavy iron chain."
+    },
+    {
+      "name": "Chalk (10 sticks)",
+      "type": "equipment",
+      "slots": 0,
+      "price_gp": 1,
+      "description": "Useful for making markings on stone."
+    },
+    {
+      "name": "Chest (wooden, large)",
+      "type": "equipment",
+      "slots": 4,
+      "price_gp": 5,
+      "description": "A large wooden chest that can hold up to 1,000 coins."
+    },
+    {
+      "name": "Chest (wooden, small)",
+      "type": "equipment",
+      "slots": 2,
+      "price_gp": 1,
+      "description": "A small wooden chest that can hold up to 300 coins."
+    },
+    {
+      "name": "Chisel",
+      "type": "equipment",
+      "slots": 1,
+      "price_gp": 2,
+      "description": "Used with a hammer for chipping away stone."
+    },
+    {
+      "name": "Cooking pots",
+      "type": "equipment",
+      "slots": 1,
+      "price_gp": 3,
+      "description": "Pots and pans for camp-fire cooking."
+    },
+    {
+      "name": "Crowbar",
+      "type": "equipment",
+      "slots": 2,
+      "price_gp": 10,
+      "description": "An iron bar, 2–3 feet long. Used for prying open doors, chest lids, etc."
+    },
+    {
+      "name": "Firewood (bundle)",
+      "type": "equipment",
+      "slots": 2,
+      "price_gp": 1,
+      "description": "A bundle of dry wood. Burns for 8 hours."
+    },
+    {
+      "name": "Fishing rod and tackle",
+      "type": "equipment",
+      "slots": 2,
+      "price_gp": 4,
+      "description": "A rod, line, hook, and bait box."
+    },
+    {
+      "name": "Garlic",
+      "type": "equipment",
+      "slots": 0,
+      "price_gp": 5,
+      "description": "Garlic, commonly used as a protective herb against certain monsters such as vampires."
+    },
+    {
+      "name": "Grappling hook",
+      "type": "equipment",
+      "slots": 1,
+      "price_gp": 25,
+      "description": "Made of iron, with 3–4 hooks and a ring to attach a rope."
+    },
+    {
+      "name": "Hammer (small)",
+      "type": "equipment",
+      "slots": 1,
+      "price_gp": 2,
+      "description": "Useful for hammering in iron spikes or tapping stonework."
+    },
+    {
+      "name": "Holy symbol",
+      "type": "equipment",
+      "slots": 1,
+      "price_gp": 25,
+      "description": "A divine spell caster’s symbol of their deity, often worn as a pendant around the neck."
+    },
+    {
+      "name": "Holy symbol (gold)",
+      "type": "equipment",
+      "slots": 0,
+      "price_gp": 100,
+      "description": "A divine spell caster’s symbol of their deity, often worn as a pendant around the neck. The high quality gold grants a +1 bonus to the 2d6 roll for the affected Hit Dice of undead monsters."
+    },
+    {
+      "name": "Holy symbol (wooden)",
+      "type": "equipment",
+      "slots": 0,
+      "price_gp": 5,
+      "description": "A divine spell caster’s symbol of their deity, often worn as a pendant around the neck. The low quality incurs a -1 penalty to the 2d6 roll which determines the success of the turning attempt."
+    },
+    {
+      "name": "Holy water (vial)",
+      "type": "equipment",
+      "slots": 1,
+      "price_gp": 25,
+      "description": "Water blessed by a holy person and stored in a special vial. Holy water damages undead monsters and loses its power if transferred from its blessed vial."
+    },
+    {
+      "name": "Ink (vial)",
+      "type": "equipment",
+      "slots": 0,
+      "price_gp": 1,
+      "description": "A vial of black ink. Coloured ink costs double. Sufficient for about 50 pages of writing."
+    },
+    {
+      "name": "Iron spikes (12)",
+      "type": "equipment",
+      "slots": 1,
+      "price_gp": 1,
+      "description": "May be used for wedging doors open or shut, anchoring a rope, and similar purposes."
+    },
+    {
+      "name": "Ladder (wooden, 10')",
+      "type": "equipment",
+      "slots": 4,
+      "price_gp": 5,
+      "description": "Simple wooden construction. Very encumbering."
+    },
+    {
+      "name": "Lantern",
+      "type": "equipment",
+      "slots": 1,
+      "price_gp": 10,
+      "description": "A shuttered lantern. Burns one oil flask every four hours and casts light in a 30-foot radius."
+    },
+    {
+      "name": "Lantern, bullseye",
+      "type": "equipment",
+      "slots": 1,
+      "price_gp": 20,
+      "description": "Casts light in a narrow beam, 60 feet long and 20 feet wide at the end. Can be closed to hide the light. Burns one oil flask every four hours (24 turns)."
+    },
+    {
+      "name": "Lock",
+      "type": "equipment",
+      "slots": 1,
+      "price_gp": 20,
+      "description": "A basic iron lock with a key."
+    },
+    {
+      "name": "Magnifying glass",
+      "type": "equipment",
+      "slots": 1,
+      "price_gp": 3,
+      "description": "Used for studying fine details."
+    },
+    {
+      "name": "Manacles",
+      "type": "equipment",
+      "slots": 1,
+      "price_gp": 15,
+      "description": "Iron manacles with a chain. Used for binding hands or feet."
+    },
+    {
+      "name": "Marbles (bag of 20)",
+      "type": "equipment",
+      "slots": 1,
+      "price_gp": 1,
+      "description": "A bag of colourful glass beads."
+    },
+    {
+      "name": "Mining pick",
+      "type": "equipment",
+      "slots": 2,
+      "price_gp": 3,
+      "description": "For breaking rock."
+    },
+    {
+      "name": "Mirror (hand-sized, steel)",
+      "type": "equipment",
+      "slots": 0,
+      "price_gp": 5,
+      "description": "Useful for looking around corners or reflecting a gaze attack."
+    },
+    {
+      "name": "Musical instrument (string)",
+      "type": "equipment",
+      "slots": 1,
+      "price_gp": 20,
+      "description": "A stringed instrument, such as a lute or mandolin. The listed price is for an instrument of basic quality. Higher quality instruments can cost up to 10 times as much."
+    },
+    {
+      "name": "Musical instrument (wind)",
+      "type": "equipment",
+      "slots": 1,
+      "price_gp": 5,
+      "description": "A wind instrument, such as a flute or pipe. The listed price is for an instrument of basic quality. Higher quality instruments can cost up to 10 times as much."
+    },
+    {
+      "name": "Oil (1 flask)",
+      "type": "equipment",
+      "slots": 1,
+      "price_gp": 2,
+      "description": "A flask of oil that fuels a lantern for four hours. If lit, a flask can create a burning 3-foot-diameter pool for 1 turn, dealing 1d8 damage to creatures passing through it."
+    },
+    {
+      "name": "Paper/parchment (2 sheets)",
+      "type": "equipment",
+      "slots": 0,
+      "price_gp": 1,
+      "description": "Approximately 1-foot-square sheets."
+    },
+    {
+      "name": "Pole (10' long, wooden)",
+      "type": "equipment",
+      "slots": 2,
+      "price_gp": 1,
+      "description": "A 2-inch-thick wooden pole useful for poking and prodding suspicious items in a dungeon."
+    },
+    {
+      "name": "Quill",
+      "type": "equipment",
+      "slots": 0,
+      "price_gp": 1,
+      "description": "A large feather sharpened into a writing point."
+    },
+    {
+      "name": "Rations, preserved (3)",
+      "type": "equipment",
+      "slots": 1,
+      "price_gp": 6,
+      "description": "Preserved food for long journeys. Lasts 30 days (one week in dank)."
+    },
+    {
+      "name": "Rations, standard (3)",
+      "type": "equipment",
+      "slots": 1,
+      "price_gp": 3,
+      "description": "Fresh, unpreserved food. Lasts 7 days (one day in dank)."
+    },
+    {
+      "name": "Rope (50')",
+      "type": "equipment",
+      "slots": 1,
+      "price_gp": 1,
+      "description": "Strong enough to hold the weight of three people and their equipment."
+    },
+    {
+      "name": "Sack",
+      "type": "equipment",
+      "slots": 1,
+      "price_gp": 1,
+      "description": "A small sack that can hold up to 6 slots. Requires a free hand to carry when loaded."
+    },
+    {
+      "name": "Saw",
+      "type": "equipment",
+      "slots": 1,
+      "price_gp": 1,
+      "description": "A hand saw for cutting wood."
+    },
+    {
+      "name": "Scroll case",
+      "type": "equipment",
+      "slots": 1,
+      "price_gp": 1,
+      "description": "An oiled leather tube with a cap. Not completely watertight."
+    },
+    {
+      "name": "Sledgehammer",
+      "type": "equipment",
+      "slots": 2,
+      "price_gp": 5,
+      "description": "A big heavy hammer for breaking rock."
+    },
+    {
+      "name": "Spade or shovel",
+      "type": "equipment",
+      "slots": 2,
+      "price_gp": 2,
+      "description": "For excavating earth."
+    },
+    {
+      "name": "Tent",
+      "type": "equipment",
+      "slots": 2,
+      "price_gp": 20,
+      "description": "Large enough for 2 adult humans."
+    },
+    {
+      "name": "Thieves' tools",
+      "type": "equipment",
+      "slots": 1,
+      "price_gp": 25,
+      "description": "A set of lock-picking tools in a small case."
+    },
+    {
+      "name": "Tinder box (flint & steel)",
+      "type": "equipment",
+      "slots": 1,
+      "price_gp": 3,
+      "description": "Flint, steel, and tinder contained in a small box. Used to light fires, including torches. Using a tinder box takes one round, with a 2-in-6 chance of success per round."
+    },
+    {
+      "name": "Torches (3)",
+      "type": "equipment",
+      "slots": 1,
+      "price_gp": 1,
+      "description": "Three torches. When lit, each casts light in a 30-foot radius and burns for 1 hour."
+    },
+    {
+      "name": "Twine (100' ball)",
+      "type": "equipment",
+      "slots": 1,
+      "price_gp": 1,
+      "description": "A wound ball of thin cord or string. Can support up to 300 coins of weight."
+    },
+    {
+      "name": "Vial (glass)",
+      "type": "equipment",
+      "slots": 1,
+      "price_gp": 1,
+      "description": "A glass vial that can hold up to half a pint of liquid. Can be bundled up to 5 in one slot."
+    },
+    {
+      "name": "Waterskin",
+      "type": "equipment",
+      "slots": 1,
+      "price_gp": 1,
+      "description": "A leather container that holds up to 2 pints, or 1 quart, of liquid."
+    },
+    {
+      "name": "Whistle",
+      "type": "equipment",
+      "slots": 0,
+      "price_gp": 1,
+      "description": "Useful for signalling or faking bird calls."
+    },
+    {
+      "name": "Wine (2 pints)",
+      "type": "equipment",
+      "slots": 1,
+      "price_gp": 1,
+      "description": "Two pints of wine."
+    },
+    {
+      "name": "Wolfsbane (1 bunch)",
+      "type": "equipment",
+      "slots": 1,
+      "price_gp": 10,
+      "description": "A flowering herb that can be used to repel lycanthropes. The creature must be hit with the herb in melee combat."
+    }
+  ]
+}

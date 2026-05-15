@@ -4,6 +4,7 @@ import { parseWeightInput } from "../../utils/utils";
 import { formatCoins, calculateCoinWeight } from "../../utils/coins";
 import { LinkifiedText } from "../../utils/linkify";
 import { useFormatWeight, usePartyConfig } from "../../contexts/PartyConfigContext";
+import { getEquipmentSuggestions, findEquipmentByName } from "../../utils/equipmentCatalog";
 
 export const ItemDetailsModal = ({
   handleDelete,
@@ -30,6 +31,7 @@ export const ItemDetailsModal = ({
     item ? String(item.weight || 0) : "",
   );
   const [editedName, setEditedName] = useState(item ? item.name : "");
+  const [showEquipmentSuggestions, setShowEquipmentSuggestions] = useState(false);
 
   // Coin editing state
   const [editedPlatinum, setEditedPlatinum] = useState(0);
@@ -71,6 +73,7 @@ export const ItemDetailsModal = ({
     setEditedWeightString(item ? String(item.weight || 0) : "");
     setIsEditing(false);
     setShowTransfer(false);
+    setShowEquipmentSuggestions(false);
     setSelectedCharacterId('');
     setSelectedContainerId('');
 
@@ -132,6 +135,25 @@ export const ItemDetailsModal = ({
       setSelectedContainerId('');
     }
   }, [selectedCharacterId, characters, currentCharId, currentContainerId]);
+
+  const applyEquipmentSuggestion = (equipment) => {
+    if (!equipment) return;
+    setEditedName(equipment.name);
+    setEditedWeightString(String(equipment.slots));
+    setEditedDescription(equipment.description || "");
+    setShowEquipmentSuggestions(false);
+  };
+
+  const handleEditedNameChange = (value) => {
+    setEditedName(value);
+    setShowEquipmentSuggestions(true);
+    const exactMatch = findEquipmentByName(value);
+    if (exactMatch) applyEquipmentSuggestion(exactMatch);
+  };
+
+  const equipmentSuggestions = isEditing && editedItemType === 'normal'
+    ? getEquipmentSuggestions(editedName)
+    : [];
 
   const handleTransfer = () => {
     if (selectedCharacterId && selectedContainerId && onTransfer) {
@@ -387,13 +409,40 @@ export const ItemDetailsModal = ({
             {isEditing ? 'Edit Coins' : item.name}
           </h3>
         ) : isEditing ? (
-          <input
-            type="text"
-            value={editedName}
-            onChange={(e) => setEditedName(e.target.value)}
-            placeholder="Name of the item"
-            className="w-full p-2 border border-gray-300 rounded-md text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 mb-3"
-          />
+          <div className="relative mb-3">
+            <input
+              type="text"
+              value={editedName}
+              onChange={(e) => handleEditedNameChange(e.target.value)}
+              onFocus={() => setShowEquipmentSuggestions(true)}
+              onBlur={() => setTimeout(() => setShowEquipmentSuggestions(false), 150)}
+              placeholder="Name of the item"
+              className="w-full p-2 border border-gray-300 rounded-md text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            {showEquipmentSuggestions && equipmentSuggestions.length > 0 && (
+              <div className="absolute z-50 mt-1 w-full bg-white border border-gray-300 rounded-md shadow-lg max-h-56 overflow-y-auto">
+                {equipmentSuggestions.map((equipment) => (
+                  <button
+                    type="button"
+                    key={equipment.name}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      applyEquipmentSuggestion(equipment);
+                    }}
+                    className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0"
+                  >
+                    <div className="flex justify-between gap-3 text-sm">
+                      <span className="font-medium text-gray-900">{equipment.name}</span>
+                      <span className="text-gray-500 shrink-0">{equipment.slots} slots</span>
+                    </div>
+                    {equipment.description && (
+                      <div className="text-xs text-gray-500 truncate">{equipment.description}</div>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         ) : (
           <h3 className={`text-2xl font-bold mb-4 border-b pb-2 ${
             isUnidentified ? 'text-purple-600' :
@@ -714,20 +763,20 @@ export const ItemDetailsModal = ({
                   </div>
                 )}
 
-                {/* Character dropdown */}
+                {/* Character / Storage dropdown */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Character
+                    Character / Storage
                   </label>
                   <select
                     value={selectedCharacterId}
                     onChange={(e) => setSelectedCharacterId(e.target.value)}
                     className="w-full p-2 border border-gray-300 rounded-md text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
-                    <option value="">Select character...</option>
+                    <option value="">Select character or storage...</option>
                     {characters.map((char) => (
                       <option key={char.id} value={char.id}>
-                        {char.name}{char.id === currentCharId ? ' (current)' : ''}
+                        {char.name}{char.isStorage ? ' (storage)' : ''}{char.id === currentCharId ? ' (current)' : ''}
                       </option>
                     ))}
                   </select>

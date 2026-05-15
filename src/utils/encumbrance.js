@@ -69,6 +69,69 @@ export const getEquippedDefinition = (container) => {
   ) || null;
 };
 
+
+export const STORAGE_CONTAINER_ID = 'storage-main';
+export const STORAGE_CONTAINER_NAME = 'Storage';
+
+export const isStorageEntity = (entity) => Boolean(entity?.isStorage);
+
+export const createStorageContainer = (items = [], id = STORAGE_CONTAINER_ID) => ({
+  id,
+  name: STORAGE_CONTAINER_NAME,
+  type: 'storage',
+  weight: 0,
+  maxCapacity: 0,
+  items,
+  description: '',
+  isStorageContainer: true,
+});
+
+export const calculateStorageSlots = (storage) => (storage?.containers || []).reduce(
+  (total, container) => (
+    total + calculateContainerWeight(container) + Number(container?.weight || 0)
+  ),
+  0,
+);
+
+export const normalizeStorageEntity = (storage) => {
+  const originalContainers = Array.isArray(storage?.containers) ? storage.containers : [];
+  const storageContainers = originalContainers.filter((container) => !isEquippedContainer(container));
+  const equippedItems = originalContainers
+    .filter(isEquippedContainer)
+    .flatMap((container) => container.items || []);
+
+  const containers = storageContainers.length > 0
+    ? storageContainers.map((container, index) => ({
+      ...container,
+      id: container.id || (index === 0 ? STORAGE_CONTAINER_ID : `storage-${index}`),
+      name: container.name || STORAGE_CONTAINER_NAME,
+      items: [
+        ...(index === 0 ? equippedItems : []),
+        ...(container.items || []),
+      ],
+      weight: Number(container.weight || 0),
+      maxCapacity: 0,
+      isStorageContainer: true,
+    }))
+    : [createStorageContainer(equippedItems, storage?.id ? `${storage.id}-storage` : STORAGE_CONTAINER_ID)];
+
+  const normalizedStorage = {
+    ...storage,
+    isStorage: true,
+    strengthModifier: 0,
+    storageLimit: Math.max(0, Number(storage?.storageLimit || 0)),
+    containers,
+  };
+
+  return {
+    storage: normalizedStorage,
+    changed:
+      storage?.isStorage !== true ||
+      Number(storage?.storageLimit || 0) !== normalizedStorage.storageLimit ||
+      !containersEqual(originalContainers, containers),
+  };
+};
+
 export const MOVEMENT_BANDS = [
   { speed: "120'", speedValue: 120, maxEquipped: 3, maxPacked: 10 },
   { speed: "90'", speedValue: 90, maxEquipped: 5, maxPacked: 12 },
@@ -215,6 +278,17 @@ export const normalizeCharacterForEquippedSections = (character) => {
     },
     changed,
   };
+};
+
+
+export const normalizeInventoryEntity = (entity) => {
+  if (isStorageEntity(entity)) {
+    const { storage, changed } = normalizeStorageEntity(entity);
+    return { entity: storage, changed };
+  }
+
+  const { character, changed } = normalizeCharacterForEquippedSections(entity);
+  return { entity: character, changed };
 };
 
 export const calculateCharacterEncumbrance = (character) => {
