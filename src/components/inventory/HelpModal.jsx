@@ -65,10 +65,20 @@ export const HelpModal = ({ show, onClose }) => {
               move it into another container, or move it to another character.
               Drop an item on a container title to put it at the top of that container,
               including when the container is collapsed. Dropping coins into a container
-              that already has coins will merge them.
+              that already has coins will merge them. Moves are recorded in the audit log only
+              when an item moves from one character to another.
             </p>
           </section>
 
+          <section>
+            <h4 className="font-semibold text-gray-900 mb-1">Counted items</h4>
+            <p>
+              Items named like <span className="font-mono">Torch (3)</span> or{' '}
+              <span className="font-mono">Iron Spike (12)</span> get small − and + controls
+              on the item row. The controls change the number in the item name; they do not
+              automatically change the item&apos;s slot value.
+            </p>
+          </section>
 
           <section>
             <h4 className="font-semibold text-gray-900 mb-1">Item-based encumbrance</h4>
@@ -119,9 +129,9 @@ export const HelpModal = ({ show, onClose }) => {
           <section>
             <h4 className="font-semibold text-gray-900 mb-1">Audit log</h4>
             <p>
-              The 📋 Audit Log button at the top shows every change made to
-              this party — useful for "who took the rope?" arguments and for
-              recovering after an accidental delete.
+              The 📋 Audit Log button at the top shows edits, deletes, and moves between
+              characters. Moves between containers on the same character are intentionally quiet.
+              Coin edits include the exact change, such as +10g or -3s.
             </p>
           </section>
         </div>

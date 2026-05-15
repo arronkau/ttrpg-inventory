@@ -8,9 +8,9 @@ Built with React + Vite + Tailwind, with Firebase (Firestore + anonymous auth) f
 
 - **Per-party shared inventory** — every party has a unique URL; share it with the table
 - **Characters and containers** — each character holds containers (backpack, mule, chest, etc.); containers hold items
-- **Coins and treasure** — platinum / gold / silver / copper, with automatic slot calculation; named treasure items track gold value
+- **Coins, treasure, and counted items** — platinum / gold / silver / copper, named treasure, and simple count controls for items named like `Torch (3)`
 - **Item-based encumbrance** — speed is calculated from equipped slots, packed slots, and each character’s STR modifier
-- **Audit log** — see who changed what, when
+- **Audit log** — see edits, deletes, and cross-character moves; coin edits include the amount changed
 - **Drag-and-drop item movement** — reorder items within a container, move them between containers, or move them between characters
 - **Bulk transfer** — move all of one character's items to another in one click
 - **Import items** — paste a list of items to add at once
@@ -90,7 +90,11 @@ A "party" is just a UUID in the URL (`/abcd-1234-...`). New visitors are redirec
 
 ### Item movement
 
-Use the grab handle on the left side of an item to drag it into a new order, into another container, or onto another character's container. Drop an item on a container title to put it at the top of that container, including when the container is collapsed. Dropping coins into a container that already has coins merges them.
+Use the grab handle on the left side of an item to drag it into a new order, into another container, or onto another character's container. Drop an item on a container title to put it at the top of that container, including when the container is collapsed. Dropping coins into a container that already has coins merges them. The audit log records item moves only when the item changes characters, not when it moves between containers on the same character.
+
+### Counted items
+
+Any normal item whose name ends in a plain number in parentheses, such as `Torch (3)` or `Iron Spike (12)`, gets small `−` and `+` controls in the item row. These controls only change the number in the item's name; the slot value stays whatever the item is set to use.
 
 ### Item-based encumbrance
 

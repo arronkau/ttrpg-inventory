@@ -59,6 +59,54 @@ const getDropIndexFromPointer = (event, itemIndex) => {
   return itemIndex + (isAfterMidpoint ? 1 : 0);
 };
 
+const COUNTED_ITEM_NAME_REGEX = /^(.*?)\s*\((\d+)\)\s*$/;
+const COIN_DENOMINATIONS = [
+  ['platinum', 'p'],
+  ['gold', 'g'],
+  ['silver', 's'],
+  ['copper', 'c'],
+];
+
+const parseCountedItemName = (name) => {
+  const match = String(name || '').match(COUNTED_ITEM_NAME_REGEX);
+  if (!match || !match[1].trim()) return null;
+
+  const count = Number.parseInt(match[2], 10);
+  if (!Number.isFinite(count)) return null;
+
+  return {
+    baseName: match[1].trim(),
+    count,
+  };
+};
+
+const formatCountedItemName = (baseName, count) => (
+  `${String(baseName || '').trim()} (${Math.max(0, Math.trunc(Number(count) || 0))})`
+);
+
+const normalizeCoinsForAudit = (coins = {}) => COIN_DENOMINATIONS.reduce(
+  (acc, [key]) => ({ ...acc, [key]: Number(coins?.[key] || 0) }),
+  {},
+);
+
+const getCoinDelta = (oldCoins = {}, newCoins = {}) => {
+  const before = normalizeCoinsForAudit(oldCoins);
+  const after = normalizeCoinsForAudit(newCoins);
+  return COIN_DENOMINATIONS.reduce(
+    (acc, [key]) => ({ ...acc, [key]: after[key] - before[key] }),
+    {},
+  );
+};
+
+const formatCoinDelta = (delta = {}) => {
+  const parts = COIN_DENOMINATIONS
+    .map(([key, suffix]) => [Number(delta?.[key] || 0), suffix])
+    .filter(([value]) => value !== 0)
+    .map(([value, suffix]) => `${value > 0 ? '+' : ''}${value}${suffix}`);
+
+  return parts.join(' ') || 'no change';
+};
+
 export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp, auth: authProp }) {
   const { partyId } = useParams();
   const navigate = useNavigate();
@@ -496,11 +544,6 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
         if (result?.error) {
           setModalContent(result.error);
           setShowModal(true);
-        } else if (result) {
-          await addAuditLogEntry(
-            'moved',
-            `transferred ${result.count} item(s) from ${sourceContainerName} to ${result.targetContainerName} (${result.characterName})`
-          );
         }
       } else {
         const sourceCharRef = doc(
@@ -756,7 +799,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
                 return cont;
               });
               txn.update(characterRef, { containers: updatedContainers });
-              return { merged: true, characterName: characterData.name, containerName: container?.name };
+              return { merged: true, addedCoins: extraData.coins, characterName: characterData.name, containerName: container?.name };
             }
           }
 
@@ -780,7 +823,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
         } else if (result?.merged) {
           await addAuditLogEntry(
             'edited',
-            `merged coins into ${result.characterName}'s ${result.containerName || 'container'}`
+            `coins in ${result.characterName}'s ${result.containerName || 'container'}: ${formatCoinDelta(result.addedCoins)}`
           );
         } else if (result) {
           const itemTypeLabel = extraData?.itemType === 'coins' ? ' (coins)' :
@@ -1092,7 +1135,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
               });
 
               txn.update(characterRef, { containers: updatedContainers });
-              return { mergedToExisting: true, oldItem, characterName: characterData.name, containerName: container?.name };
+              return { mergedToExisting: true, oldItem, addedCoins: updatedFields.coins, characterName: characterData.name, containerName: container?.name };
             }
           }
 
@@ -1134,7 +1177,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
         if (result?.mergedToExisting && result.oldItem) {
           await addAuditLogEntry(
             'edited',
-            `converted "${result.oldItem.name}" to coins and merged in ${result.characterName}'s ${result.containerName || 'container'}`
+            `converted "${result.oldItem.name}" to coins in ${result.characterName}'s ${result.containerName || 'container'}: ${formatCoinDelta(result.addedCoins)}`
           );
         } else if (result?.oldItem) {
           const { oldItem, characterName, containerName } = result;
@@ -1526,7 +1569,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
 
             return {
               auditDescription: sameChar
-                ? `${coinParts.join(' ')} from ${sourceContainer.name} to ${targetContainer.name} (${sourceCharData.name})`
+                ? null
                 : `${coinParts.join(' ')} from ${sourceCharData.name}'s ${sourceContainer.name} to ${targetCharData.name}'s ${targetContainer.name}`,
             };
           }
@@ -1627,7 +1670,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
 
             return {
               auditDescription: sameChar
-                ? `${qtyToTransfer}x ${baseName} from ${sourceContainer.name} to ${targetContainer.name} (${sourceCharData.name})`
+                ? null
                 : `${qtyToTransfer}x ${baseName} from ${sourceCharData.name}'s ${sourceContainer.name} to ${targetCharData.name}'s ${targetContainer.name}`,
             };
           }
@@ -1682,7 +1725,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
 
           return {
             auditDescription: sameChar
-              ? `item "${itemToMove.name}" from ${sourceContainer.name} to ${targetContainer.name} (${sourceCharData.name})`
+              ? null
               : `item "${itemToMove.name}" from ${sourceCharData.name}'s ${sourceContainer.name} to ${targetCharData.name}'s ${targetContainer.name}`,
           };
         });
@@ -1839,9 +1882,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
             });
 
             txn.update(sourceCharRef, { containers: updatedContainers });
-            return {
-              auditDescription: `item "${itemToMove.name}" from ${sourceContainer.name} to ${targetContainer.name} (${sourceCharData.name})`,
-            };
+            return { skipAudit: true };
           }
 
           const updatedSourceContainers = sourceContainers.map((container) =>
@@ -2016,6 +2057,9 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
           if (!characterDoc.exists()) return null;
 
           const characterData = normalizeCharacterData(characterDoc.data());
+          const container = characterData.containers.find(c => c.id === containerId);
+          const oldItem = container?.items?.find((item) => item.id === itemId);
+          if (!oldItem) return null;
 
           const totalCoins = (coins.platinum || 0) + (coins.gold || 0) + (coins.silver || 0) + (coins.copper || 0);
           const coinWeight = Math.ceil(totalCoins / partyConfig.coinsPerWeightUnit);
@@ -2045,15 +2089,21 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
           });
 
           txn.update(characterRef, { containers: updatedContainers });
-          const container = characterData.containers.find(c => c.id === containerId);
-          return { characterName: characterData.name, containerName: container?.name };
+          return {
+            characterName: characterData.name,
+            containerName: container?.name,
+            delta: getCoinDelta(oldItem.coins, coins),
+          };
         });
 
         if (result) {
-          await addAuditLogEntry(
-            'edited',
-            `coins in ${result.characterName}'s ${result.containerName || 'container'}`
-          );
+          const coinDeltaText = formatCoinDelta(result.delta);
+          if (coinDeltaText !== 'no change') {
+            await addAuditLogEntry(
+              'edited',
+              `coins in ${result.characterName}'s ${result.containerName || 'container'}: ${coinDeltaText}`
+            );
+          }
         }
       } catch (error) {
         console.error("Error saving coin item:", error);
@@ -2062,6 +2112,73 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
       }
     },
     [db, userId, appId, partyId, addAuditLogEntry, partyConfig.coinsPerWeightUnit],
+  );
+
+  const handleUpdateCountedItemCount = useCallback(
+    async (charId, containerId, itemId, delta) => {
+      if (!db || !userId || !partyId) return;
+
+      try {
+        const characterRef = doc(
+          db,
+          `artifacts/${appId}/public/data/dnd_inventory/${partyId}/characters`,
+          charId,
+        );
+
+        const result = await runTransaction(db, async (txn) => {
+          const characterDoc = await txn.get(characterRef);
+          if (!characterDoc.exists()) return null;
+
+          const characterData = normalizeCharacterData(characterDoc.data());
+          const container = characterData.containers.find((c) => c.id === containerId);
+          const item = container?.items?.find((i) => i.id === itemId);
+          const counted = parseCountedItemName(item?.name);
+          if (!container || !item || !counted) return null;
+
+          const newCount = Math.max(0, counted.count + delta);
+          if (newCount === counted.count) return { skip: true };
+          const newName = formatCountedItemName(counted.baseName, newCount);
+
+          const updatedContainers = characterData.containers.map((cont) => {
+            if (cont.id === containerId) {
+              return {
+                ...cont,
+                items: (cont.items || []).map((currentItem) => (
+                  currentItem.id === itemId
+                    ? { ...currentItem, name: newName }
+                    : currentItem
+                )),
+              };
+            }
+            return cont;
+          });
+
+          txn.update(characterRef, { containers: updatedContainers });
+          return {
+            baseName: counted.baseName,
+            oldCount: counted.count,
+            newCount,
+            characterName: characterData.name,
+            containerName: container.name,
+          };
+        });
+
+        if (result && !result.skip) {
+          const deltaText = result.newCount - result.oldCount > 0
+            ? `+${result.newCount - result.oldCount}`
+            : `${result.newCount - result.oldCount}`;
+          await addAuditLogEntry(
+            'edited',
+            `item count "${result.baseName}": ${deltaText} to ${result.newCount} in ${result.characterName}'s ${result.containerName || 'container'}`
+          );
+        }
+      } catch (error) {
+        console.error("Error updating counted item:", error);
+        setModalContent(`Error updating item count: ${error.message}`);
+        setShowModal(true);
+      }
+    },
+    [db, userId, appId, partyId, addAuditLogEntry],
   );
 
   // Handler to liquidate treasure into gold coins
@@ -2434,6 +2551,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
                     draggedItem?.sourceContainerId === container.id;
                   const showDropBefore = isDropIndex(index);
                   const showDropAfter = isDropIndex(index + 1);
+                  const countedItem = parseCountedItemName(item.name);
 
                   return (
                     <div
@@ -2473,21 +2591,51 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
                           });
                           setShowItemDetailsModal(true);
                         }}
-                        className="flex-1 flex justify-between items-center px-3 py-2 cursor-pointer"
+                        className="flex-1 flex justify-between items-center gap-2 px-3 py-2 cursor-pointer min-w-0"
                       >
-                        <span className={`text-base ${
-                          item.isUnidentified ? 'text-purple-300' :
-                          item.itemType === 'coins' ? 'text-yellow-300' :
-                          item.itemType === 'treasure' ? 'text-emerald-300' :
-                          'text-white'
-                        }`}>
-                          {item.isUnidentified && <span className="mr-1">?</span>}
-                          {item.itemType === 'treasure' && <span className="mr-1">*</span>}
-                          {item.itemType === 'coins' && item.coins
-                            ? `$ ${formatCoins(item.coins)}`
-                            : item.name}
+                        <span className="flex items-center gap-1 min-w-0">
+                          <span className={`text-base truncate ${
+                            item.isUnidentified ? 'text-purple-300' :
+                            item.itemType === 'coins' ? 'text-yellow-300' :
+                            item.itemType === 'treasure' ? 'text-emerald-300' :
+                            'text-white'
+                          }`}>
+                            {item.isUnidentified && <span className="mr-1">?</span>}
+                            {item.itemType === 'treasure' && <span className="mr-1">*</span>}
+                            {item.itemType === 'coins' && item.coins
+                              ? `$ ${formatCoins(item.coins)}`
+                              : item.name}
+                          </span>
+                          {countedItem && item.itemType !== 'coins' && (
+                            <span className="inline-flex items-center gap-0.5 ml-1 rounded border border-gray-500 bg-gray-700/70 text-xs text-gray-200 overflow-hidden shrink-0">
+                              <button
+                                type="button"
+                                aria-label={`Decrease ${countedItem.baseName} count`}
+                                title="Decrease count"
+                                className="px-1 py-0.5 leading-none bg-transparent hover:bg-gray-600 focus:outline-none"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleUpdateCountedItemCount(char.id, container.id, item.id, -1);
+                                }}
+                              >
+                                −
+                              </button>
+                              <button
+                                type="button"
+                                aria-label={`Increase ${countedItem.baseName} count`}
+                                title="Increase count"
+                                className="px-1 py-0.5 leading-none bg-transparent hover:bg-gray-600 focus:outline-none border-l border-gray-500"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleUpdateCountedItemCount(char.id, container.id, item.id, 1);
+                                }}
+                              >
+                                +
+                              </button>
+                            </span>
+                          )}
                         </span>
-                        <span className="text-yellow-200 text-sm font-medium">
+                        <span className="text-yellow-200 text-sm font-medium shrink-0">
                           {formatPartyWeight(item.weight)}
                         </span>
                       </div>
