@@ -63,7 +63,9 @@ export const HelpModal = ({ show, onClose }) => {
             <p>
               Drag an item by the grab handle on its left side to reorder it,
               move it into another container, or move it to another character.
-              Dropping coins into a container that already has coins will merge them.
+              Drop an item on a container title to put it at the top of that container,
+              including when the container is collapsed. Dropping coins into a container
+              that already has coins will merge them.
             </p>
           </section>
 
@@ -71,9 +73,14 @@ export const HelpModal = ({ show, onClose }) => {
           <section>
             <h4 className="font-semibold text-gray-900 mb-1">Item-based encumbrance</h4>
             <p>
-              A container named <span className="font-semibold">Equipped</span> counts
-              toward equipped slots. Items in every other container count toward packed slots.
-              Edit a character to set their STR modifier directly; that modifier is applied to packed slot limits.
+              Each character has four built-in equipped containers: Left Hand, Right Hand,
+              Armor, and Other Equipped. Those containers appear under the Equipped heading and
+              count toward equipped slots. Left Hand, Right Hand, and Armor can each hold only one item
+              and are filled by dragging items into them. User-created containers appear under the Stowed
+              heading and count toward packed slots.
+              The Equipped and Stowed headings each show their section speed; the character header shows
+              the slower speed. Edit a character to set their STR modifier directly; that modifier is applied
+              to packed slot limits.
             </p>
           </section>
 

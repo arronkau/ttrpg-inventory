@@ -90,11 +90,11 @@ A "party" is just a UUID in the URL (`/abcd-1234-...`). New visitors are redirec
 
 ### Item movement
 
-Use the grab handle on the left side of an item to drag it into a new order, into another container, or onto another character's container. Dropping coins into a container that already has coins merges them.
+Use the grab handle on the left side of an item to drag it into a new order, into another container, or onto another character's container. Drop an item on a container title to put it at the top of that container, including when the container is collapsed. Dropping coins into a container that already has coins merges them.
 
 ### Item-based encumbrance
 
-This fork uses Gavin Norman’s item-based encumbrance approach. A container named `Equipped` is special: every item in it counts as equipped. Items in any other container count as packed. Each character stores a `strengthModifier` directly, and that modifier is applied to the packed-slot movement bands. The numeric item field is still named `weight` for backwards compatibility, but it represents item slots by default.
+This fork uses Gavin Norman’s item-based encumbrance approach. Each character has four built-in equipped containers: `Left Hand`, `Right Hand`, `Armor`, and `Other Equipped`. Those containers appear under the `Equipped` heading and count toward equipped slots. `Left Hand`, `Right Hand`, and `Armor` can each hold only one item, though that item may be worth multiple slots; those single-item equipped containers are filled by dragging items into them. User-created containers appear under the `Stowed` heading and count toward packed slots. The `Equipped` and `Stowed` headings each show their own section speed; the character header shows the slower speed. Each character stores a `strengthModifier` directly, and that modifier is applied to the packed-slot movement bands. The numeric item field is still named `weight` for backwards compatibility, but it represents item slots by default.
 
 ## Bulk import format
 

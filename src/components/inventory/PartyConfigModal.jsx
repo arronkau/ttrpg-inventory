@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { sanitizeDefaultContainers } from "../../utils/encumbrance";
 
 export const PartyConfigModal = ({ show, onClose, config, onSave }) => {
   const [singular, setSingular] = useState(config.weightUnit?.singular || "slot");
@@ -6,7 +7,7 @@ export const PartyConfigModal = ({ show, onClose, config, onSave }) => {
   const [coinsPerWeightUnit, setCoinsPerWeightUnit] = useState(
     String(config.coinsPerWeightUnit || 100),
   );
-  const [containers, setContainers] = useState(config.defaultContainers || []);
+  const [containers, setContainers] = useState(sanitizeDefaultContainers(config.defaultContainers || []));
 
   // Reset local state whenever the modal opens or the upstream config changes.
   useEffect(() => {
@@ -15,7 +16,7 @@ export const PartyConfigModal = ({ show, onClose, config, onSave }) => {
       setPlural(config.weightUnit?.plural || "slots");
       setCoinsPerWeightUnit(String(config.coinsPerWeightUnit || 100));
       setContainers(
-        (config.defaultContainers || []).map((c) => ({ ...c })),
+        sanitizeDefaultContainers(config.defaultContainers || []).map((c) => ({ ...c })),
       );
     }
   }, [show, config]);
@@ -48,7 +49,7 @@ export const PartyConfigModal = ({ show, onClose, config, onSave }) => {
     const trimmedSingular = singular.trim() || "slot";
     const trimmedPlural = plural.trim() || trimmedSingular;
     const ratio = Math.max(1, Math.floor(Number(coinsPerWeightUnit) || 100));
-    const cleanedContainers = containers
+    const cleanedContainers = sanitizeDefaultContainers(containers)
       .map((c) => ({
         name: (c.name || "").trim(),
         weight: Number(c.weight) || 0,
@@ -130,9 +131,8 @@ export const PartyConfigModal = ({ show, onClose, config, onSave }) => {
           <section>
             <h4 className="font-semibold text-gray-900 mb-2">Default containers for new characters</h4>
             <p className="text-sm text-gray-600 mb-2">
-              Each new character is created with these containers. A container named
-              Equipped is treated as equipped gear; all other containers count as packed gear. Existing
-              characters are unchanged.
+              Each new character also gets the four built-in equipped containers: Left Hand,
+              Right Hand, Armor, and Other Equipped. Configure only the stowed containers here.
             </p>
             <div className="space-y-2">
               {containers.length === 0 ? (

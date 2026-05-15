@@ -31,7 +31,12 @@ import { PartyConfigModal } from "./PartyConfigModal";
 import { calculateContainerWeight, formatWeight, formatWeightValue } from "../../utils/utils";
 import {
   calculateCharacterEncumbrance,
-  ensureEquippedDefaultContainer,
+  isProgrammaticEquippedContainer,
+  isSingleItemEquippedContainer,
+  normalizeCharacterForEquippedSections,
+  normalizeContainersForEquippedSections,
+  sanitizeDefaultContainers,
+  splitEquippedAndStowedContainers,
 } from "../../utils/encumbrance";
 import { formatCoins } from "../../utils/coins";
 import {
@@ -144,6 +149,21 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
     (val) => formatWeight(val, partyConfig.weightUnit || DEFAULT_PARTY_CONFIG.weightUnit),
     [partyConfig.weightUnit],
   );
+
+  const normalizeCharacterData = useCallback((data) => (
+    normalizeCharacterForEquippedSections(data).character
+  ), []);
+
+  const getSingleItemContainerError = useCallback((container, incomingItemCount = 1, replacingItemId = null) => {
+    if (!isSingleItemEquippedContainer(container)) return null;
+
+    const existingItems = (container.items || []).filter((item) => item.id !== replacingItemId);
+    if (existingItems.length + incomingItemCount > 1) {
+      return `${container.name} can only hold one item.`;
+    }
+
+    return null;
+  }, []);
 
   // Keyboard shortcut: 'e' to toggle expand/collapse all
   useEffect(() => {
@@ -298,16 +318,28 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
       const unsubscribe = onSnapshot(
         charactersCollectionRef,
         (snapshot) => {
+          const characterUpdates = [];
           const fetchedCharacters = snapshot.docs
-            .map((doc, i) => {
-              const data = doc.data();
-              return {
-                id: doc.id,
+            .map((docSnap, i) => {
+              const data = docSnap.data();
+              const { character, changed } = normalizeCharacterForEquippedSections({
+                id: docSnap.id,
                 ...data,
                 order: data.order !== undefined ? data.order : i,
-              };
+              });
+              if (changed) {
+                characterUpdates.push(
+                  updateDoc(docSnap.ref, { containers: character.containers }),
+                );
+              }
+              return character;
             })
             .sort((a, b) => (a.order || 0) - (b.order || 0));
+          if (characterUpdates.length > 0) {
+            Promise.all(characterUpdates).catch((error) => {
+              console.error("Error normalizing equipped containers:", error);
+            });
+          }
           setCharacters(fetchedCharacters);
           const maxOrder = fetchedCharacters.length > 0 
             ? Math.max(...fetchedCharacters.map(c => c.order || 0))
@@ -365,7 +397,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
           setPartyConfig({
             weightUnit: data.weightUnit || DEFAULT_PARTY_CONFIG.weightUnit,
             coinsPerWeightUnit: data.coinsPerWeightUnit || DEFAULT_PARTY_CONFIG.coinsPerWeightUnit,
-            defaultContainers: ensureEquippedDefaultContainer(data.defaultContainers || DEFAULT_PARTY_CONFIG.defaultContainers),
+            defaultContainers: sanitizeDefaultContainers(data.defaultContainers || DEFAULT_PARTY_CONFIG.defaultContainers),
           });
         },
         (error) => {
@@ -408,7 +440,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
       await setDoc(configRef, {
         weightUnit: config.weightUnit,
         coinsPerWeightUnit: config.coinsPerWeightUnit,
-        defaultContainers: ensureEquippedDefaultContainer(config.defaultContainers),
+        defaultContainers: sanitizeDefaultContainers(config.defaultContainers),
       }, { merge: true });
       await addAuditLogEntry('edited', 'party settings');
     } catch (error) {
@@ -436,10 +468,13 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
           const characterDoc = await txn.get(characterRef);
           if (!characterDoc.exists()) return null;
 
-          const characterData = characterDoc.data();
+          const characterData = normalizeCharacterData(characterDoc.data());
           const sourceContainer = characterData.containers.find(c => c.id === sourceContainerId);
           const targetContainer = characterData.containers.find(c => c.id === targetContainerId);
+          if (!sourceContainer || !targetContainer) return { error: "Error: Source or target container not found." };
           const itemsToTransfer = sourceContainer?.items || [];
+          const singleItemError = getSingleItemContainerError(targetContainer, itemsToTransfer.length);
+          if (singleItemError) return { error: singleItemError };
 
           const updatedContainers = characterData.containers.map(container => {
             if (container.id === sourceContainerId) {
@@ -458,7 +493,10 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
           };
         });
 
-        if (result) {
+        if (result?.error) {
+          setModalContent(result.error);
+          setShowModal(true);
+        } else if (result) {
           await addAuditLogEntry(
             'moved',
             `transferred ${result.count} item(s) from ${sourceContainerName} to ${result.targetContainerName} (${result.characterName})`
@@ -483,11 +521,14 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
           ]);
           if (!sourceCharDoc.exists() || !targetCharDoc.exists()) return null;
 
-          const sourceCharData = sourceCharDoc.data();
-          const targetCharData = targetCharDoc.data();
+          const sourceCharData = normalizeCharacterData(sourceCharDoc.data());
+          const targetCharData = normalizeCharacterData(targetCharDoc.data());
           const sourceContainer = sourceCharData.containers.find(c => c.id === sourceContainerId);
           const targetContainer = targetCharData.containers.find(c => c.id === targetContainerId);
+          if (!sourceContainer || !targetContainer) return { error: "Error: Source or target container not found." };
           const itemsToTransfer = sourceContainer?.items || [];
+          const singleItemError = getSingleItemContainerError(targetContainer, itemsToTransfer.length);
+          if (singleItemError) return { error: singleItemError };
 
           const updatedSourceContainers = sourceCharData.containers.map(container => {
             if (container.id === sourceContainerId) {
@@ -514,7 +555,10 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
           };
         });
 
-        if (result) {
+        if (result?.error) {
+          setModalContent(result.error);
+          setShowModal(true);
+        } else if (result) {
           await addAuditLogEntry(
             'moved',
             `transferred ${result.count} item(s) from ${result.sourceCharName}'s ${sourceContainerName} to ${result.targetCharName}'s ${result.targetContainerName}`
@@ -552,21 +596,23 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
       onSubmit: async (characterName) => {
         if (characterName) {
           try {
-            const defaults = ensureEquippedDefaultContainer(
+            const stowedDefaults = sanitizeDefaultContainers(
               (partyConfig.defaultContainers && partyConfig.defaultContainers.length > 0)
                 ? partyConfig.defaultContainers
                 : DEFAULT_PARTY_CONFIG.defaultContainers,
             );
+            const stowedContainers = stowedDefaults.map((c) => ({
+              id: generateId(),
+              name: c.name,
+              items: [],
+              weight: c.weight || 0,
+              maxCapacity: c.maxCapacity || 0,
+            }));
+            const { containers } = normalizeContainersForEquippedSections(stowedContainers);
             const newCharacter = {
               name: characterName,
               strengthModifier: 0,
-              containers: defaults.map((c) => ({
-                id: generateId(),
-                name: c.name,
-                items: [],
-                weight: c.weight || 0,
-                maxCapacity: c.maxCapacity || 0,
-              })),
+              containers,
             };
             await addDoc(
               collection(
@@ -638,8 +684,15 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
           const characterDoc = await txn.get(characterRef);
           if (!characterDoc.exists()) return null;
 
-          const characterData = characterDoc.data();
+          const characterData = normalizeCharacterData(characterDoc.data());
           const container = characterData.containers.find(c => c.id === containerId);
+          if (!container) return { error: "Error: Container not found." };
+          const existingCoinsIndex = (container.items || []).findIndex(item => item.itemType === 'coins');
+          const canMergeIntoExistingCoins = extraData?.itemType === 'coins' && existingCoinsIndex !== -1;
+          const singleItemError = canMergeIntoExistingCoins
+            ? null
+            : getSingleItemContainerError(container, 1);
+          if (singleItemError) return { error: singleItemError };
 
           // Build the new item object
           const newItem = {
@@ -672,7 +725,6 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
 
           // If adding coins, check if there's already a coins item in the container and merge
           if (extraData?.itemType === 'coins' && container) {
-            const existingCoinsIndex = (container.items || []).findIndex(item => item.itemType === 'coins');
             if (existingCoinsIndex !== -1) {
               const updatedContainers = characterData.containers.map((cont) => {
                 if (cont.id === containerId) {
@@ -722,7 +774,10 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
           return { merged: false, characterName: characterData.name, containerName: container?.name };
         });
 
-        if (result?.merged) {
+        if (result?.error) {
+          setModalContent(result.error);
+          setShowModal(true);
+        } else if (result?.merged) {
           await addAuditLogEntry(
             'edited',
             `merged coins into ${result.characterName}'s ${result.containerName || 'container'}`
@@ -833,7 +888,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
           const characterDoc = await txn.get(characterRef);
           if (!characterDoc.exists()) return null;
 
-          const characterData = characterDoc.data();
+          const characterData = normalizeCharacterData(characterDoc.data());
           const newContainer = {
             id: generateId(),
             name: containerName,
@@ -920,7 +975,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
           const characterDoc = await txn.get(characterRef);
           if (!characterDoc.exists()) return null;
 
-          const characterData = characterDoc.data();
+          const characterData = normalizeCharacterData(characterDoc.data());
           const container = characterData.containers.find(c => c.id === containerId);
           const oldItem = container?.items?.find(i => i.id === itemId);
           const updatedContainers = characterData.containers.map((cont) => {
@@ -990,7 +1045,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
           const characterDoc = await txn.get(characterRef);
           if (!characterDoc.exists()) return null;
 
-          const characterData = characterDoc.data();
+          const characterData = normalizeCharacterData(characterDoc.data());
           const container = characterData.containers.find(c => c.id === containerId);
           const oldItem = container?.items?.find(i => i.id === itemId);
 
@@ -1130,7 +1185,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
           const characterDoc = await txn.get(characterRef);
           if (!characterDoc.exists()) return;
 
-          const characterData = characterDoc.data();
+          const characterData = normalizeCharacterData(characterDoc.data());
           const updatedContainers = characterData.containers.map((container) => {
             if (container.id === containerId) {
               return {
@@ -1185,7 +1240,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
             const characterDoc = await txn.get(characterRef);
             if (!characterDoc.exists()) return null;
 
-            const characterData = characterDoc.data();
+            const characterData = normalizeCharacterData(characterDoc.data());
             const updatedContainers = characterData.containers.filter(
               (container) => container.id !== containerId,
             );
@@ -1239,7 +1294,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
             const characterDoc = await txn.get(characterRef);
             if (!characterDoc.exists()) return null;
 
-            const characterData = characterDoc.data();
+            const characterData = normalizeCharacterData(characterDoc.data());
             const container = characterData.containers.find(c => c.id === containerId);
             const item = container?.items?.find(i => i.id === itemId);
             const updatedContainers = characterData.containers.map((cont) => {
@@ -1351,8 +1406,8 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
             return { error: "Error: Source or target character not found." };
           }
 
-          const sourceCharData = sourceCharDoc.data();
-          const targetCharData = sameChar ? sourceCharData : targetCharDoc.data();
+          const sourceCharData = normalizeCharacterData(sourceCharDoc.data());
+          const targetCharData = sameChar ? sourceCharData : normalizeCharacterData(targetCharDoc.data());
 
           const sourceContainer = sourceCharData.containers.find(c => c.id === sourceContainerId);
           const targetContainer = targetCharData.containers.find(c => c.id === targetContainerId);
@@ -1364,6 +1419,15 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
           if (!itemToMove) {
             return { error: "Error: Item not found." };
           }
+
+          const targetHasMatchingCoinItem =
+            itemToMove.itemType === 'coins' &&
+            (targetContainer.items || []).some((item) => item.itemType === 'coins');
+          const singleItemError = getSingleItemContainerError(
+            targetContainer,
+            targetHasMatchingCoinItem ? 0 : 1,
+          );
+          if (singleItemError) return { error: singleItemError };
 
           // Partial coin transfer
           if (partialData?.type === 'coins' && itemToMove.itemType === 'coins') {
@@ -1666,8 +1730,8 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
             return { error: "Error: Source or target character not found." };
           }
 
-          const sourceCharData = sourceCharDoc.data();
-          const targetCharData = sameChar ? sourceCharData : targetCharDoc.data();
+          const sourceCharData = normalizeCharacterData(sourceCharDoc.data());
+          const targetCharData = sameChar ? sourceCharData : normalizeCharacterData(targetCharDoc.data());
           const sourceContainers = sourceCharData.containers || [];
           const targetContainers = targetCharData.containers || [];
           const sourceContainer = sourceContainers.find((container) => container.id === sourceContainerId);
@@ -1684,6 +1748,17 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
           }
 
           const [itemToMove] = sourceItems.splice(sourceIndex, 1);
+          const movingWithinSameContainer = sameChar && sourceContainerId === targetContainerId;
+          if (!movingWithinSameContainer) {
+            const targetHasMatchingCoinItem =
+              itemToMove.itemType === 'coins' &&
+              (targetContainer.items || []).some((item) => item.itemType === 'coins');
+            const singleItemError = getSingleItemContainerError(
+              targetContainer,
+              targetHasMatchingCoinItem ? 0 : 1,
+            );
+            if (singleItemError) return { error: singleItemError };
+          }
 
           const buildCoinItem = (coins, id) => {
             const total =
@@ -1881,7 +1956,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
           const characterDoc = await txn.get(characterRef);
           if (!characterDoc.exists()) return null;
 
-          const characterData = characterDoc.data();
+          const characterData = normalizeCharacterData(characterDoc.data());
           let identifiedItemName = '';
 
           const updatedContainers = characterData.containers.map((container) => {
@@ -1940,7 +2015,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
           const characterDoc = await txn.get(characterRef);
           if (!characterDoc.exists()) return null;
 
-          const characterData = characterDoc.data();
+          const characterData = normalizeCharacterData(characterDoc.data());
 
           const totalCoins = (coins.platinum || 0) + (coins.gold || 0) + (coins.silver || 0) + (coins.copper || 0);
           const coinWeight = Math.ceil(totalCoins / partyConfig.coinsPerWeightUnit);
@@ -2005,7 +2080,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
           const characterDoc = await txn.get(characterRef);
           if (!characterDoc.exists()) return null;
 
-          const characterData = characterDoc.data();
+          const characterData = normalizeCharacterData(characterDoc.data());
           const container = characterData.containers.find(c => c.id === containerId);
           const treasureItem = container?.items?.find(i => i.id === itemId);
           if (!treasureItem) return null;
@@ -2017,6 +2092,11 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
           const existingCoinsIndex = (container.items || []).findIndex(item =>
             item.itemType === 'coins' && item.id !== itemId
           );
+          if (isSingleItemEquippedContainer(container) && remainingQty > 0) {
+            return {
+              error: `${container.name} can only hold one item. Liquidate the full stack before converting it to coins here.`,
+            };
+          }
 
           const updateTreasureItem = (items) => {
             if (remainingQty <= 0) {
@@ -2111,7 +2191,10 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
           };
         });
 
-        if (result) {
+        if (result?.error) {
+          setModalContent(result.error);
+          setShowModal(true);
+        } else if (result) {
           const qtyText = result.qtyToLiquidate > 1 ? `${result.qtyToLiquidate}x ` : '';
           await addAuditLogEntry(
             'edited',
@@ -2145,7 +2228,7 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
           const characterDoc = await txn.get(characterRef);
           if (!characterDoc.exists()) return null;
 
-          const characterData = characterDoc.data();
+          const characterData = normalizeCharacterData(characterDoc.data());
 
           const itemsWithIds = items.map(item => ({
             ...item,
@@ -2154,6 +2237,12 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
 
           const coinItems = itemsWithIds.filter(item => item.itemType === 'coins');
           const nonCoinItems = itemsWithIds.filter(item => item.itemType !== 'coins');
+          const targetContainer = characterData.containers.find((container) => container.id === containerId);
+          if (!targetContainer) return { error: "Error: Container not found." };
+          const hasExistingCoinItem = (targetContainer.items || []).some((item) => item.itemType === 'coins');
+          const incomingItemCount = nonCoinItems.length + (coinItems.length > 0 && !hasExistingCoinItem ? 1 : 0);
+          const singleItemError = getSingleItemContainerError(targetContainer, incomingItemCount);
+          if (singleItemError) return { error: singleItemError };
 
           const updatedContainers = characterData.containers.map((container) => {
             if (container.id === containerId) {
@@ -2220,7 +2309,10 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
           return characterData.name;
         });
 
-        if (characterNameResult) {
+        if (characterNameResult?.error) {
+          setModalContent(characterNameResult.error);
+          setShowModal(true);
+        } else if (characterNameResult) {
           await addAuditLogEntry(
             'created',
             `imported ${items.length} item(s) into ${characterNameResult}'s ${containerName}`
@@ -2234,6 +2326,220 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
     },
     [db, userId, appId, partyId, importTarget, addAuditLogEntry, partyConfig.coinsPerWeightUnit],
   );
+
+
+  const renderSectionHeader = (label, speed) => (
+    <div className="mt-2 px-2 py-1 rounded-md bg-gray-900/70 border border-gray-600 text-gray-200 font-semibold flex items-center justify-between">
+      <span>{label} ({speed})</span>
+    </div>
+  );
+
+  const renderContainerCard = (char, container, options = {}) => {
+    const { allowCollapse = true, title = container.name, allowDetails = !isProgrammaticEquippedContainer(container) } = options;
+    const currentContainerWeight = calculateContainerWeight(container);
+    const isProgrammaticEquipped = isProgrammaticEquippedContainer(container);
+    const isSingleItemEquipped = isSingleItemEquippedContainer(container);
+    const isOverCapacity =
+      !isProgrammaticEquipped &&
+      container.maxCapacity !== undefined &&
+      currentContainerWeight > container.maxCapacity;
+    const containerItems = container.items || [];
+    const addDisabledReason = getSingleItemContainerError(container, 1);
+    const isCollapsed = allowCollapse &&
+      (!Object.prototype.hasOwnProperty.call(collapsedContainers, container.id) ||
+        collapsedContainers[container.id]);
+    const isContainerDropTarget =
+      dropTarget?.targetCharId === char.id &&
+      dropTarget?.targetContainerId === container.id;
+    const isDropIndex = (index) =>
+      isContainerDropTarget && dropTarget?.targetIndex === index;
+
+    return (
+      <div
+        key={container.id}
+        className={`bg-gray-700 rounded-lg p-2 shadow-md transition-all duration-200
+                                    ${isOverCapacity ? "border-4 border-red-500" : "border border-gray-600"}
+                                `}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (!allowDetails) return;
+          setSelectedContainerForDetails({
+            container,
+            charId: char.id,
+          });
+          setShowContainerDetailsModal(true);
+        }}
+      >
+        <h3
+          className={`text-lg font-semibold text-gray-200 mb-1 border-b border-gray-500 pb-1 flex items-center rounded-t-md transition-colors ${
+            isContainerDropTarget && dropTarget?.targetIndex === 0 ? 'bg-blue-900/30' : ''
+          }`}
+          onDragOver={(e) => handleContainerDragOver(e, char.id, container.id, 0)}
+          onDrop={(e) => handleItemDrop(e, char.id, container.id, 0)}
+        >
+          {allowCollapse ? (
+            isCollapsed ? (
+              <button
+                className="bg-transparent p-0 border-none mr-2 items-center focus-visible:outline-0 focus:outline-0 text-gray-400"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleExpandContainer(container.id);
+                }}
+              >
+                &gt;
+              </button>
+            ) : (
+              <button
+                className="bg-transparent p-0 border-none mr-2 items-center focus-visible:outline-0 focus:outline-0 text-gray-400"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleCollapseContainer(container.id);
+                }}
+              >
+                v
+              </button>
+            )
+          ) : (
+            <span className="mr-2 w-3" aria-hidden="true" />
+          )}
+          <span className="flex-grow">{title}</span>
+          {!isSingleItemEquipped && (
+            <span className="text-yellow-200 ml-auto text-sm font-medium">
+              {isProgrammaticEquipped
+                ? `${formatWeightValue(currentContainerWeight)} slots`
+                : `${formatWeightValue(currentContainerWeight)} / ${formatPartyWeight(container.maxCapacity)}`}
+            </span>
+          )}
+        </h3>
+        {isCollapsed ? (
+          <></>
+        ) : (
+          <>
+            <div
+              className={`space-y-1 min-h-10 rounded-md transition-colors ${isContainerDropTarget ? 'bg-blue-900/20' : ''}`}
+              onDragOver={(e) => handleContainerDragOver(e, char.id, container.id, containerItems.length)}
+              onDrop={(e) => handleItemDrop(e, char.id, container.id, containerItems.length)}
+            >
+              {containerItems.length === 0 ? (
+                <p
+                  className={`text-gray-400 text-sm italic rounded-md border border-dashed px-3 py-2 ${isDropIndex(0) ? 'border-blue-400 bg-blue-900/30' : 'border-gray-600'}`}
+                >
+                  {isSingleItemEquipped ? "Drop one item here." : "Drop items here, or click '+' to add items."}
+                </p>
+              ) : (
+                containerItems.map((item, index) => {
+                  const isDraggedItem =
+                    draggedItem?.itemId === item.id &&
+                    draggedItem?.sourceCharId === char.id &&
+                    draggedItem?.sourceContainerId === container.id;
+                  const showDropBefore = isDropIndex(index);
+                  const showDropAfter = isDropIndex(index + 1);
+
+                  return (
+                    <div
+                      key={item.id}
+                      onDragOver={(e) => handleItemDragOver(e, char.id, container.id, index)}
+                      onDrop={(e) => handleItemDrop(e, char.id, container.id, getDropIndexFromPointer(e, index))}
+                      className={`flex items-center bg-gray-600 rounded-md shadow-sm transition-all duration-200 hover:bg-gray-500 border-y-2 ${
+                        showDropBefore ? 'border-t-blue-400' : 'border-t-transparent'
+                      } ${
+                        showDropAfter ? 'border-b-blue-400' : 'border-b-transparent'
+                      } ${isDraggedItem ? 'opacity-50' : ''}`}
+                    >
+                      <span
+                        role="button"
+                        aria-label="Drag item"
+                        title="Drag to reorder or move item"
+                        tabIndex={0}
+                        draggable
+                        onClick={(e) => e.stopPropagation()}
+                        onDragStart={(e) => handleItemDragStart(e, {
+                          itemId: item.id,
+                          sourceCharId: char.id,
+                          sourceContainerId: container.id,
+                        })}
+                        onDragEnd={handleItemDragEnd}
+                        className="self-stretch flex items-center px-2 border-r border-gray-500 text-gray-300 hover:text-white hover:bg-gray-500 rounded-l-md cursor-grab active:cursor-grabbing select-none"
+                      >
+                        ⠿
+                      </span>
+                      <div
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedItemForDetails({
+                            item,
+                            charId: char.id,
+                            containerId: container.id,
+                          });
+                          setShowItemDetailsModal(true);
+                        }}
+                        className="flex-1 flex justify-between items-center px-3 py-2 cursor-pointer"
+                      >
+                        <span className={`text-base ${
+                          item.isUnidentified ? 'text-purple-300' :
+                          item.itemType === 'coins' ? 'text-yellow-300' :
+                          item.itemType === 'treasure' ? 'text-emerald-300' :
+                          'text-white'
+                        }`}>
+                          {item.isUnidentified && <span className="mr-1">?</span>}
+                          {item.itemType === 'treasure' && <span className="mr-1">*</span>}
+                          {item.itemType === 'coins' && item.coins
+                            ? `$ ${formatCoins(item.coins)}`
+                            : item.name}
+                        </span>
+                        <span className="text-yellow-200 text-sm font-medium">
+                          {formatPartyWeight(item.weight)}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+            {!isSingleItemEquipped && (
+              <div className="mt-1 flex gap-1">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (addDisabledReason) {
+                      setModalContent(addDisabledReason);
+                      setShowModal(true);
+                      return;
+                    }
+                    handleAddItemClick(char.id, container.id);
+                  }}
+                  disabled={Boolean(addDisabledReason)}
+                  title={addDisabledReason || "Add item"}
+                  className={`flex-1 text-white font-bold py-1 px-2 rounded-lg text-sm shadow transform transition duration-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 ${
+                    addDisabledReason
+                      ? 'bg-gray-500 cursor-not-allowed opacity-70'
+                      : 'bg-blue-600 hover:bg-blue-700 hover:scale-105'
+                  }`}
+                >
+                  + Add Item
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setImportTarget({
+                      charId: char.id,
+                      containerId: container.id,
+                      containerName: container.name,
+                    });
+                    setShowImportItemsModal(true);
+                  }}
+                  className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-1 px-2 rounded-lg text-sm shadow transform transition duration-300 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-50"
+                  title="Import items from JSON"
+                >
+                  {"{ }"}
+                </button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    );
+  };
 
   if (loading) {
     return (
@@ -2558,177 +2864,22 @@ export default function InventoryAppContent({ firebaseConfig, appId, db: dbProp,
                 <></>
               ) : (
                 <div className="flex flex-col gap-2 flex-grow">
-                  {char.containers.map((container) => {
-                    const currentContainerWeight =
-                      calculateContainerWeight(container);
-                    const isOverCapacity =
-                      container.maxCapacity !== undefined &&
-                      currentContainerWeight > container.maxCapacity;
-                    const containerItems = container.items || [];
-                    const isContainerDropTarget =
-                      dropTarget?.targetCharId === char.id &&
-                      dropTarget?.targetContainerId === container.id;
-                    const isDropIndex = (index) =>
-                      isContainerDropTarget && dropTarget?.targetIndex === index;
+                  {(() => {
+                    const encumbrance = calculateCharacterEncumbrance(char);
+                    const { equippedContainers, stowedContainers } = splitEquippedAndStowedContainers(char.containers || []);
 
                     return (
-                      <div
-                        key={container.id}
-                        className={`bg-gray-700 rounded-lg p-2 shadow-md transition-all duration-200
-                                                    ${isOverCapacity ? "border-4 border-red-500" : "border border-gray-600"}
-                                                `}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedContainerForDetails({
-                            container,
-                            charId: char.id,
-                          });
-                          setShowContainerDetailsModal(true);
-                        }}
-                      >
-                        <h3 className="text-lg font-semibold text-gray-200 mb-1 border-b border-gray-500 pb-1 flex items-center">
-                          {!Object.prototype.hasOwnProperty.call(collapsedContainers, container.id) || collapsedContainers[container.id] ? (
-                            <button
-                              className="bg-transparent p-0 border-none mr-2 items-center focus-visible:outline-0 focus:outline-0 text-gray-400"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleExpandContainer(container.id);
-                              }}
-                            >
-                              &gt;
-                            </button>
-                          ) : (
-                            <button
-                              className="bg-transparent p-0 border-none mr-2 items-center focus-visible:outline-0 focus:outline-0 text-gray-400"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleCollapseContainer(container.id);
-                              }}
-                            >
-                              v
-                            </button>
-                          )}
-                          <span className="flex-grow">{container.name}</span>
-                          <span className="text-yellow-200 ml-auto text-sm font-medium">
-                            {`${formatWeightValue(currentContainerWeight)} / ${formatPartyWeight(container.maxCapacity)}`}
-                          </span>
-                        </h3>
-                        {!Object.prototype.hasOwnProperty.call(collapsedContainers, container.id) || collapsedContainers[container.id] ? (
-                          <></>
-                        ) : (
-                          <>
-                            <div
-                              className={`space-y-1 min-h-10 rounded-md transition-colors ${isContainerDropTarget ? 'bg-blue-900/20' : ''}`}
-                              onDragOver={(e) => handleContainerDragOver(e, char.id, container.id, containerItems.length)}
-                              onDrop={(e) => handleItemDrop(e, char.id, container.id, containerItems.length)}
-                            >
-                              {containerItems.length === 0 ? (
-                                <p
-                                  className={`text-gray-400 text-sm italic rounded-md border border-dashed px-3 py-2 ${isDropIndex(0) ? 'border-blue-400 bg-blue-900/30' : 'border-gray-600'}`}
-                                >
-                                  Drop items here, or click '+' to add items.
-                                </p>
-                              ) : (
-                                containerItems.map((item, index) => {
-                                  const isDraggedItem =
-                                    draggedItem?.itemId === item.id &&
-                                    draggedItem?.sourceCharId === char.id &&
-                                    draggedItem?.sourceContainerId === container.id;
-                                  const showDropBefore = isDropIndex(index);
-                                  const showDropAfter = isDropIndex(index + 1);
-
-                                  return (
-                                  <div
-                                    key={item.id}
-                                    onDragOver={(e) => handleItemDragOver(e, char.id, container.id, index)}
-                                    onDrop={(e) => handleItemDrop(e, char.id, container.id, getDropIndexFromPointer(e, index))}
-                                    className={`flex items-center bg-gray-600 rounded-md shadow-sm transition-all duration-200 hover:bg-gray-500 border-y-2 ${
-                                      showDropBefore ? 'border-t-blue-400' : 'border-t-transparent'
-                                    } ${
-                                      showDropAfter ? 'border-b-blue-400' : 'border-b-transparent'
-                                    } ${isDraggedItem ? 'opacity-50' : ''}`}
-                                  >
-                                    <span
-                                      role="button"
-                                      aria-label="Drag item"
-                                      title="Drag to reorder or move item"
-                                      tabIndex={0}
-                                      draggable
-                                      onClick={(e) => e.stopPropagation()}
-                                      onDragStart={(e) => handleItemDragStart(e, {
-                                        itemId: item.id,
-                                        sourceCharId: char.id,
-                                        sourceContainerId: container.id,
-                                      })}
-                                      onDragEnd={handleItemDragEnd}
-                                      className="self-stretch flex items-center px-2 border-r border-gray-500 text-gray-300 hover:text-white hover:bg-gray-500 rounded-l-md cursor-grab active:cursor-grabbing select-none"
-                                    >
-                                      ⠿
-                                    </span>
-                                    <div
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setSelectedItemForDetails({
-                                          item,
-                                          charId: char.id,
-                                          containerId: container.id,
-                                        });
-                                        setShowItemDetailsModal(true);
-                                      }}
-                                      className="flex-1 flex justify-between items-center px-3 py-2 cursor-pointer"
-                                    >
-                                      <span className={`text-base ${
-                                        item.isUnidentified ? 'text-purple-300' :
-                                        item.itemType === 'coins' ? 'text-yellow-300' :
-                                        item.itemType === 'treasure' ? 'text-emerald-300' :
-                                        'text-white'
-                                      }`}>
-                                        {item.isUnidentified && <span className="mr-1">?</span>}
-                                        {item.itemType === 'treasure' && <span className="mr-1">*</span>}
-                                        {item.itemType === 'coins' && item.coins
-                                          ? `$ ${formatCoins(item.coins)}`
-                                          : item.name}
-                                      </span>
-                                      <span className="text-yellow-200 text-sm font-medium">
-                                        {formatPartyWeight(item.weight)}
-                                      </span>
-                                    </div>
-                                  </div>
-                                  );
-                                })
-                              )}
-                            </div>
-                            <div className="mt-1 flex gap-1">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleAddItemClick(char.id, container.id);
-                                }}
-                                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-1 px-2 rounded-lg text-sm shadow transform transition duration-300 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50"
-                              >
-                                + Add Item
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setImportTarget({
-                                    charId: char.id,
-                                    containerId: container.id,
-                                    containerName: container.name,
-                                  });
-                                  setShowImportItemsModal(true);
-                                }}
-                                className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-1 px-2 rounded-lg text-sm shadow transform transition duration-300 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-50"
-                                title="Import items from JSON"
-                              >
-                                {"{ }"}
-                              </button>
-                            </div>
-                          </>
-                        )}
-                      </div>
+                      <>
+                        {renderSectionHeader('Equipped', encumbrance.equippedSpeed)}
+                        {equippedContainers.map((container) => renderContainerCard(char, container, {
+                          allowCollapse: false,
+                          allowDetails: false,
+                        }))}
+                        {renderSectionHeader('Stowed', encumbrance.stowedSpeed)}
+                        {stowedContainers.map((container) => renderContainerCard(char, container))}
+                      </>
                     );
-                  })}
+                  })()}
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
